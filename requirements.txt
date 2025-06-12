@@ -1,0 +1,3 @@
+scapy
+psutil
+rich
