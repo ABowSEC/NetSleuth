@@ -1,0 +1,43 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.ENV/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE configs
+.vscode/
+.idea/
+
+# Logs/output
+*.log
+
+# Test coverage
+htmlcov/
+.coverage
+.cache
+.pytest_cache/
+
+# PyInstaller
+dist/
+build/
+*.spec
+
+# Custom compiled data
+*.pcap
+*.db
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
