@@ -1,4 +1,4 @@
-NetSleuth ReadME
+NetSleuth
 A lightweight Python tool that passively monitors your local network. It shows active devices, their DNS queries, connections, and ARP activity — all without sending any packets.
 
 ## Features
