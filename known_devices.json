@@ -1,0 +1,15 @@
+{
+  "ip": {
+    "10.0.0.6": "My Laptop",
+    "10.0.0.9": "LG TV"
+  },
+  "mac": {
+    "74:e6:b8:d5:dd:36": "LG TV",
+    "fc:fb:fb:12:34:56": "Amazon Echo"
+  },
+  "mac_prefix": {
+    "74:e6:b8": "LG Electronics",
+    "fc:fb:fb": "Amazon Technologies",
+    "d8:96:e0": "Apple Inc."
+  }
+}
