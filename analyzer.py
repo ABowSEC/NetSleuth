@@ -1,86 +1,89 @@
+# analyzer.py
 from scapy.layers.inet import TCP, UDP, IP
-from scapy.layers.dns import DNS
-from scapy.layers.l2 import ARP
-from scapy.packet import Raw
+from scapy.layers.dns  import DNS
+from scapy.layers.l2   import ARP, Ether
+from scapy.packet      import Raw
 import time
-from deviceTracker import update_device
+from deviceTracker import update_device   #  (ip, mac, field, value)
 
-VERBOSE = False  # Set to True to enable per-packet prints
-
-# ANSI color scheme
-def colored(text, color):
-    colors = {
-        "magenta": "\033[95m",
-        "blue": "\033[94m",
-        "green": "\033[92m",
-        "yellow": "\033[93m",
-        "red": "\033[91m",
-        "cyan": "\033[96m",
-        "reset": "\033[0m"
-    }
-    return f"{colors[color]}{text}{colors['reset']}"
-
+VERBOSE = False  # True = per-packet prints
 devices_seen = {}
 
-def analyze_packet(packet):
+_COLORS = {
+    "magenta": "\033[95m", "blue": "\033[94m", "green": "\033[92m",
+    "yellow": "\033[93m", "red": "\033[91m", "cyan": "\033[96m",
+    "reset":  "\033[0m"
+}
+def colored(text, color):
+    return f"{_COLORS[color]}{text}{_COLORS['reset']}"
+
+#Main Dispatch
+def analyze_packet(pkt, mac_src=None, ip_src=None, ip_dst=None):
+    """Parse one Scapy packet; update device log."""
     now = time.strftime('%H:%M:%S')
 
-    handlers = {
-        'ARP': lambda pkt: handle_arp(pkt, now),
-        'DNS': lambda pkt: handle_dns(pkt, now),
-        'UDP': lambda pkt: handle_udp(pkt, now),
-        'TCP': lambda pkt: handle_tcp(pkt, now)
-    }
+    try:
+        # Fallback extraction if sniffer didn’t supply values
+        if mac_src is None and pkt.haslayer(Ether):
+            mac_src = pkt[Ether].src.lower()
+        if ip_src is None and pkt.haslayer(IP):
+            ip_src = pkt[IP].src
+        if ip_dst is None and pkt.haslayer(IP):
+            ip_dst = pkt[IP].dst
 
-    for layer_name, handler in handlers.items():
-        if packet.haslayer(eval(layer_name)):
-            handler(packet)
+        # ARP
+        if pkt.haslayer(ARP):
+            handle_arp(pkt[ARP], mac_src, now)
 
-    if packet.haslayer(Raw):
-        raw_data = bytes(packet[Raw])
-        if b'model=' in raw_data or b'manufacturer=' in raw_data:
-            if VERBOSE:
-                print(colored(f"[{now}] [mDNS] Possible device info: {raw_data}", "green"))
+        # DNS (UDP/53)
+        if pkt.haslayer(DNS):
+            handle_dns(pkt, mac_src, ip_src, now)
 
-def handle_arp(packet, now):
-    arp = packet[ARP]
-    if VERBOSE:
-        print(colored(f"[{now}] [ARP] {arp.psrc} is asking about {arp.pdst}", "yellow"))
-    devices_seen[arp.psrc] = {'type': 'ARP', 'last_seen': now}
-    update_device(arp.psrc, "connections", f"ARP→{arp.pdst}")
+        # UDP (non-DNS)
+        if pkt.haslayer(UDP) and not pkt.haslayer(DNS):
+            handle_udp(pkt[UDP], ip_src, ip_dst, mac_src, now)
 
-def handle_dns(packet, now):
-    if VERBOSE:
-        print(colored(f"[{now}] [DNS] Query Detected", "magenta"))
-    if packet.haslayer(IP):
-        src_ip = packet[IP].src
+        # TCP
+        if pkt.haslayer(TCP):
+            handle_tcp(pkt[TCP], ip_src, ip_dst, mac_src, now)
+
+        # Optional mDNS / service discovery inspection
+        if pkt.haslayer(Raw):
+            raw = bytes(pkt[Raw])
+            if b'model=' in raw or b'manufacturer=' in raw:
+                if VERBOSE:
+                    print(colored(f"[{now}] [mDNS] Possible device info: {raw}", "green"))
+
+    except Exception as e:
         if VERBOSE:
-            print(colored(f"[{now}] [DNS] From {src_ip}", "magenta"))
-        devices_seen[src_ip] = {'type': 'DNS', 'last_seen': now}
-        if packet.haslayer(Raw):
-            raw_data = bytes(packet[Raw])
-            if b"." in raw_data:
-                try:
-                    domain = raw_data.split(b"\x00")[0].decode(errors="ignore")
-                    update_device(src_ip, "dns_queries", domain)
-                except:
-                    pass
+            print(colored(f"[!] Error processing packet: {e}", "red"))
 
-def handle_udp(packet, now):
-    udp = packet[UDP]
-    src = packet[IP].src if packet.haslayer(IP) else "?"
-    dst = packet[IP].dst if packet.haslayer(IP) else "?"
+# Layer-specific handlers
+
+def handle_arp(arp, mac_src, now):
     if VERBOSE:
-        print(colored(f"[{now}] [UDP] {src}:{udp.sport} → {dst}:{udp.dport}", "blue"))
-    devices_seen[src] = {'type': 'UDP', 'last_seen': now}
-    update_device(src, "connections", f"{dst}:{udp.dport}")
+        print(colored(f"[{now}] [ARP] {arp.psrc} → {arp.pdst}", "yellow"))
+    update_device(arp.psrc, mac_src, "services", f"ARP→{arp.pdst}")
 
-def handle_tcp(packet, now):
-    tcp = packet[TCP]
-    src = packet[IP].src if packet.haslayer(IP) else "?"
-    dst = packet[IP].dst if packet.haslayer(IP) else "?"
+def handle_dns(pkt, mac_src, ip_src, now):
+    if not ip_src:
+        return
+    if VERBOSE:
+        print(colored(f"[{now}] [DNS] Query from {ip_src}", "magenta"))
+    qname = pkt[DNS].qd.qname.decode(errors="ignore").rstrip('.')
+    update_device(ip_src, mac_src, "dns_queries", qname)
+
+def handle_udp(udp, ip_src, ip_dst, mac_src, now):
+    if not ip_src or not ip_dst:
+        return
+    if VERBOSE:
+        print(colored(f"[{now}] [UDP] {ip_src}:{udp.sport} → {ip_dst}:{udp.dport}", "blue"))
+    update_device(ip_src, mac_src, "connections", f"{ip_dst}:{udp.dport}")
+
+def handle_tcp(tcp, ip_src, ip_dst, mac_src, now):
+    if not ip_src or not ip_dst:
+        return
     flags = tcp.sprintf("%TCP.flags%")
     if VERBOSE:
-        print(colored(f"[{now}] [TCP] {src}:{tcp.sport} → {dst}:{tcp.dport} [{flags}]", "cyan"))
-    devices_seen[src] = {'type': 'TCP', 'last_seen': now}
-    update_device(src, "connections", f"{dst}:{tcp.dport}")
+        print(colored(f"[{now}] [TCP] {ip_src}:{tcp.sport} → {ip_dst}:{tcp.dport} [{flags}]", "cyan"))
+    update_device(ip_src, mac_src, "connections", f"{ip_dst}:{tcp.dport}")
