@@ -13,28 +13,33 @@ def start_periodic_summary(interval=30):
     thread.start()
 
 def main():
-    interfaces = get_active_interfaces()
+    try:
+        interfaces = get_active_interfaces()
 
-    if not interfaces:
-        print("No active network interfaces found.")
-        return
-
-    if len(interfaces) == 1:
-        selected_iface = interfaces[0]
-        print(f"Auto-selecting interface: {selected_iface}")
-    else:
-        print("Multiple active interfaces found:")
-        for idx, iface in enumerate(interfaces):
-            print(f"{idx + 1}. {iface}")
-        try:
-            choice = int(input("Select interface number to sniff on: "))
-            selected_iface = interfaces[choice - 1]
-        except (IndexError, ValueError):
-            print("Invalid selection.")
+        if not interfaces:
+            print("No active network interfaces found.")
             return
-    print("30 seconds please")
-    start_periodic_summary()
-    start_sniffing(interface=selected_iface, packet_count=0)
+
+        if len(interfaces) == 1:
+            selected_iface = interfaces[0]
+            print(f"Auto-selecting interface: {selected_iface}")
+        else:
+            print("Multiple active interfaces found:")
+            for idx, iface in enumerate(interfaces, start=1):
+                print(f"{idx}. {iface}")
+            try:
+                choice = int(input("Select interface number to sniff on: "))
+                selected_iface = interfaces[choice - 1]
+            except (IndexError, ValueError):
+                print("Invalid selection.")
+                return
+
+        print("Starting NetSleuth... summaries every 30 seconds.\n")
+        start_periodic_summary()
+        start_sniffing(interface=selected_iface, packet_count=0)
+
+    except KeyboardInterrupt:
+        print("\n[!] Interrupted by user. Exiting NetSleuth.\n")
 
 if __name__ == "__main__":
     main()
