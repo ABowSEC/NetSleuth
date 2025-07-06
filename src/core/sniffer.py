@@ -1,7 +1,7 @@
 # sniffer.py
 import platform
 from scapy.all import sniff, conf, Ether, IP, ARP
-from analyzer import analyze_packet
+from .analyzer import analyze_packet
 
 try:
     from scapy.all import L3RawSocket          # Linux/macOS only

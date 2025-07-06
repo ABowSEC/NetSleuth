@@ -1,7 +1,7 @@
 # device_mapper.py
 import json, os, re
 
-CFG = os.path.join(os.path.dirname(__file__), "known_devices.json")
+CFG = os.path.join(os.path.dirname(__file__), "..", "config", "known_devices.json")
 with open(CFG, "r") as f:
     _data = json.load(f)
 

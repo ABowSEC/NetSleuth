@@ -4,7 +4,7 @@ from scapy.layers.dns  import DNS
 from scapy.layers.l2   import ARP, Ether
 from scapy.packet      import Raw
 import time
-from deviceTracker import update_device   #  (ip, mac, field, value)
+from .device_tracker import update_device   #  (ip, mac, field, value)
 
 VERBOSE = False  # True = per-packet prints
 devices_seen = {}
