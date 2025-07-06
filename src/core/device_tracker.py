@@ -1,6 +1,6 @@
 # deviceTracker.py
 import time
-from device_mapper import get_hostname
+from ..utils.device_mapper import get_hostname
 
 # Dynamic record of device activity
 device_log: dict[str, dict] = {}

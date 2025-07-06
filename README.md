@@ -8,3 +8,7 @@ A lightweight Python tool that passively monitors your local network. It shows a
 - Device activity summaries every 30 seconds
 - Basic device name mapping via JSON
 - Windows and Linux/macOS support
+
+
+## Usage
+python main.py --web
