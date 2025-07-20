@@ -25,21 +25,31 @@ def packet_callback(pkt):
     analyze_packet(pkt, mac_src=mac_src, ip_src=ip_src, ip_dst=ip_dst)
 
 def start_sniffing(interface, packet_count=0):
-    # ---------- Windows: force Layer-3 socket ----------
+    # ---------- Windows: try L2 capture first, fall back to L3 ----------
     if WIN_OS:
-        conf.use_pcap = True                     # Npcap raw-IP mode
-        print("[i] Windows detected → using IP-level capture only")
-
-        # Build a Layer-3 socket and give it to sniff()
-        l3sock = conf.L3socket(iface=interface)
-        sniff(
-            opened_socket=l3sock,                # <- key trick
-            prn=packet_callback,
-            count=packet_count,
-            store=False,
-            filter="ip"                          # keeps it lean
-        )
-        return
+        print("[i] Windows detected → attempting L2 capture for MAC addresses")
+        
+        try:
+            # Try to get MAC addresses with L2 capture
+            sniff(iface=interface,
+                  prn=packet_callback,
+                  count=packet_count,
+                  store=False)
+            return
+        except Exception as e:
+            print(colored(f"[!] L2 capture failed: {e}\n    Falling back to IP-only capture.", "red"))
+            
+            # Fallback to IP-only capture
+            conf.use_pcap = True
+            l3sock = conf.L3socket(iface=interface)
+            sniff(
+                opened_socket=l3sock,
+                prn=packet_callback,
+                count=packet_count,
+                store=False,
+                filter="ip"
+            )
+            return
 
     # ---------- Linux / macOS: try full L2, then fall back ----------
     try:

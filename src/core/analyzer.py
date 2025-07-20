@@ -6,7 +6,13 @@ from scapy.packet      import Raw
 import time
 from .device_tracker import update_device   #  (ip, mac, field, value)
 
-VERBOSE = False  # True = per-packet prints
+# Import configuration
+try:
+    from config import VERBOSE, DEBUG_MODE
+except ImportError:
+    VERBOSE = False
+    DEBUG_MODE = False
+
 devices_seen = {}
 
 _COLORS = {
@@ -23,7 +29,7 @@ def analyze_packet(pkt, mac_src=None, ip_src=None, ip_dst=None):
     now = time.strftime('%H:%M:%S')
 
     try:
-        # Fallback extraction if sniffer didn’t supply values
+        # Fallback extraction if sniffer didn't supply values
         if mac_src is None and pkt.haslayer(Ether):
             mac_src = pkt[Ether].src.lower()
         if ip_src is None and pkt.haslayer(IP):
@@ -31,7 +37,7 @@ def analyze_packet(pkt, mac_src=None, ip_src=None, ip_dst=None):
         if ip_dst is None and pkt.haslayer(IP):
             ip_dst = pkt[IP].dst
 
-        # ARP
+                # ARP
         if pkt.haslayer(ARP):
             handle_arp(pkt[ARP], mac_src, now)
 
@@ -70,8 +76,15 @@ def handle_dns(pkt, mac_src, ip_src, now):
         return
     if VERBOSE:
         print(colored(f"[{now}] [DNS] Query from {ip_src}", "magenta"))
-    qname = pkt[DNS].qd.qname.decode(errors="ignore").rstrip('.')
-    update_device(ip_src, mac_src, "dns_queries", qname)
+    
+    # Safely extract DNS query name
+    try:
+        if pkt[DNS].qd and pkt[DNS].qd.qname:
+            qname = pkt[DNS].qd.qname.decode(errors="ignore").rstrip('.')
+            update_device(ip_src, mac_src, "dns_queries", qname)
+    except (AttributeError, IndexError):
+        # DNS packet doesn't have expected structure
+        pass
 
 def handle_udp(udp, ip_src, ip_dst, mac_src, now):
     if not ip_src or not ip_dst:
