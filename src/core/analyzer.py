@@ -37,7 +37,7 @@ def analyze_packet(pkt, mac_src=None, ip_src=None, ip_dst=None):
         if ip_dst is None and pkt.haslayer(IP):
             ip_dst = pkt[IP].dst
 
-                # ARP
+        # ARP
         if pkt.haslayer(ARP):
             handle_arp(pkt[ARP], mac_src, now)
 
