@@ -64,8 +64,8 @@ def main():
                 daemon=True
             )
             web_thread.start()
-            print(f"🌐 Web interface started at http://localhost:{args.port}")
-            print("📊 Open your browser to view the real-time dashboard\n")
+            print(f"Web interface started at http://localhost:{args.port}")
+            print("Open your browser to view the real-time dashboard\n")
 
         # Start sniffing
         start_sniffing(interface=selected_iface, packet_count=0)
