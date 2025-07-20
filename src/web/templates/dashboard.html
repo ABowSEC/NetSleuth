@@ -19,7 +19,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
         }
@@ -43,7 +43,7 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -75,11 +75,27 @@
             letter-spacing: 1px;
         }
 
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
         .devices-section {
             background: white;
             border-radius: 10px;
             padding: 20px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .alerts-section {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-height: 600px;
+            overflow-y: auto;
         }
 
         .section-title {
@@ -92,8 +108,8 @@
 
         .device-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 15px;
         }
 
         .device-card {
@@ -190,6 +206,90 @@
             animation: pulse 2s infinite;
         }
 
+        .alert-item {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border-left: 4px solid;
+        }
+
+        .alert-low {
+            background: #e3f2fd;
+            border-left-color: #2196f3;
+        }
+
+        .alert-medium {
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+
+        .alert-high {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+
+        .alert-critical {
+            background: #f3e5f5;
+            border-left-color: #9c27b0;
+        }
+
+        .alert-time {
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .alert-message {
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .controls {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        .control-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        .btn:hover {
+            background: #5a6fd8;
+        }
+
+        .btn-danger {
+            background: #f44336;
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
         @keyframes pulse {
             0% { opacity: 1; }
             50% { opacity: 0.5; }
@@ -220,8 +320,38 @@
                 font-size: 2rem;
             }
             
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
             .device-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .controls {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-card {
+                padding: 15px;
+            }
+
+            .stat-number {
+                font-size: 2rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-number {
+                font-size: 1.8rem;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
             }
         }
     </style>
@@ -247,15 +377,41 @@
                 <div class="stat-label">DNS Queries</div>
             </div>
             <div class="stat-card">
+                <div class="stat-number" id="total-alerts">0</div>
+                <div class="stat-label">Active Alerts</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-number" id="last-update">--:--:--</div>
                 <div class="stat-label">Last Update</div>
             </div>
         </div>
 
-        <div class="devices-section">
-            <h2 class="section-title">Network Devices</h2>
-            <div id="devices-container">
-                <div class="no-devices">No devices detected yet. Start monitoring to see network activity.</div>
+        <div class="controls">
+            <h3 class="section-title">Controls</h3>
+            <div class="control-group">
+                <label class="control-label">Search Devices:</label>
+                <input type="text" id="device-search" class="control-input" placeholder="Search by IP, name, or MAC...">
+            </div>
+            <div class="control-group">
+                <button class="btn" onclick="exportData()">Export Data</button>
+                <button class="btn" onclick="clearData()">Clear Data</button>
+                <button class="btn btn-danger" onclick="stopMonitoring()">Stop Monitoring</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="devices-section">
+                <h2 class="section-title">Network Devices</h2>
+                <div id="devices-container">
+                    <div class="no-devices">No devices detected yet. Start monitoring to see network activity.</div>
+                </div>
+            </div>
+
+            <div class="alerts-section">
+                <h2 class="section-title">Alerts</h2>
+                <div id="alerts-container">
+                    <div class="no-devices">No alerts at this time.</div>
+                </div>
             </div>
         </div>
 
@@ -268,85 +424,181 @@
     <script>
         function updateDashboard() {
             fetch('/api/network-data')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    // Update stats
-                    document.getElementById('total-devices').textContent = data.total_devices;
-                    document.getElementById('total-connections').textContent = data.total_connections;
-                    document.getElementById('total-dns').textContent = data.total_dns_queries;
-                    document.getElementById('last-update').textContent = data.last_update;
+                    try {
+                        // Update stats
+                        document.getElementById('total-devices').textContent = data.total_devices || 0;
+                        document.getElementById('total-connections').textContent = data.total_connections || 0;
+                        document.getElementById('total-dns').textContent = data.total_dns_queries || 0;
+                        document.getElementById('total-alerts').textContent = (data.alerts || []).length;
+                        document.getElementById('last-update').textContent = data.last_update || '--:--:--';
 
-                    // Update devices
-                    const devicesContainer = document.getElementById('devices-container');
-                    
-                    if (Object.keys(data.devices).length === 0) {
-                        devicesContainer.innerHTML = '<div class="no-devices">No devices detected yet. Start monitoring to see network activity.</div>';
-                        return;
-                    }
+                        // Update devices
+                        updateDevices(data.devices || {});
 
-                    let devicesHTML = '<div class="device-grid">';
-                    
-                    for (const [ip, device] of Object.entries(data.devices)) {
-                        devicesHTML += `
-                            <div class="device-card">
-                                <div class="device-header">
-                                    <div>
-                                        <div class="device-name">${device.hostname}</div>
-                                        <div class="device-ip">${ip}</div>
-                                    </div>
-                                </div>
-                                <div class="device-mac">MAC: ${device.mac}</div>
-                                <div class="device-details">
-                                    <div class="detail-item">
-                                        <span class="detail-label">Connections:</span>
-                                        <span class="detail-value">${device.connection_count}</span>
-                                        ${device.connections.length > 0 ? `
-                                            <div class="connection-list">
-                                                ${device.connections.slice(0, 5).map(conn => 
-                                                    `<div class="list-item">${conn}</div>`
-                                                ).join('')}
-                                                ${device.connections.length > 5 ? `<div class="list-item">... and ${device.connections.length - 5} more</div>` : ''}
-                                            </div>
-                                        ` : ''}
-                                    </div>
-                                    <div class="detail-item">
-                                        <span class="detail-label">DNS Queries:</span>
-                                        <span class="detail-value">${device.dns_count}</span>
-                                        ${device.dns_queries.length > 0 ? `
-                                            <div class="dns-list">
-                                                ${device.dns_queries.slice(0, 3).map(query => 
-                                                    `<div class="list-item">${query}</div>`
-                                                ).join('')}
-                                                ${device.dns_queries.length > 3 ? `<div class="list-item">... and ${device.dns_queries.length - 3} more</div>` : ''}
-                                            </div>
-                                        ` : ''}
-                                    </div>
-                                    ${device.services.length > 0 ? `
-                                        <div class="detail-item">
-                                            <span class="detail-label">Services:</span>
-                                            <div class="service-list">
-                                                ${device.services.slice(0, 3).map(service => 
-                                                    `<div class="list-item">${service}</div>`
-                                                ).join('')}
-                                                ${device.services.length > 3 ? `<div class="list-item">... and ${device.services.length - 3} more</div>` : ''}
-                                            </div>
-                                        </div>
-                                    ` : ''}
-                                    <div class="last-seen">Last seen: ${device.last_seen}</div>
-                                </div>
-                            </div>
-                        `;
+                        // Update alerts
+                        updateAlerts(data.alerts || []);
+                    } catch (error) {
+                        console.error('Error processing dashboard data:', error);
                     }
-                    
-                    devicesHTML += '</div>';
-                    devicesContainer.innerHTML = devicesHTML;
                 })
                 .catch(error => {
                     console.error('Error fetching network data:', error);
+                    // Show error state in UI
+                    document.getElementById('total-devices').textContent = '--';
+                    document.getElementById('total-connections').textContent = '--';
+                    document.getElementById('total-dns').textContent = '--';
+                    document.getElementById('total-alerts').textContent = '--';
+                    document.getElementById('last-update').textContent = 'Error';
                 });
         }
 
-        // Update dashboard immediately and then every 5 seconds
+        function updateDevices(devices) {
+            const devicesContainer = document.getElementById('devices-container');
+            const searchTerm = document.getElementById('device-search').value.toLowerCase();
+            
+            if (Object.keys(devices).length === 0) {
+                devicesContainer.innerHTML = '<div class="no-devices">No devices detected yet. Start monitoring to see network activity.</div>';
+                return;
+            }
+
+            let devicesHTML = '<div class="device-grid">';
+            
+            for (const [ip, device] of Object.entries(devices)) {
+                // Filter by search term
+                if (searchTerm && !ip.toLowerCase().includes(searchTerm) && 
+                    !device.hostname.toLowerCase().includes(searchTerm) &&
+                    !device.mac.toLowerCase().includes(searchTerm)) {
+                    continue;
+                }
+
+                devicesHTML += `
+                    <div class="device-card">
+                        <div class="device-header">
+                            <div>
+                                <div class="device-name">${device.hostname}</div>
+                                <div class="device-ip">${ip}</div>
+                            </div>
+                        </div>
+                        <div class="device-mac">MAC: ${device.mac}</div>
+                        <div class="device-details">
+                            <div class="detail-item">
+                                <span class="detail-label">Connections:</span>
+                                <span class="detail-value">${device.connection_count}</span>
+                                ${device.connections.length > 0 ? `
+                                    <div class="connection-list">
+                                        ${device.connections.slice(0, 5).map(conn => 
+                                            `<div class="list-item">${conn}</div>`
+                                        ).join('')}
+                                        ${device.connections.length > 5 ? `<div class="list-item">... and ${device.connections.length - 5} more</div>` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-label">DNS Queries:</span>
+                                <span class="detail-value">${device.dns_count}</span>
+                                ${device.dns_queries.length > 0 ? `
+                                    <div class="dns-list">
+                                        ${device.dns_queries.slice(0, 3).map(query => 
+                                            `<div class="list-item">${query}</div>`
+                                        ).join('')}
+                                        ${device.dns_queries.length > 3 ? `<div class="list-item">... and ${device.dns_queries.length - 3} more</div>` : ''}
+                                    </div>
+                                ` : ''}
+                            </div>
+                            ${device.services.length > 0 ? `
+                                <div class="detail-item">
+                                    <span class="detail-label">Services:</span>
+                                    <div class="service-list">
+                                        ${device.services.slice(0, 3).map(service => 
+                                            `<div class="list-item">${service}</div>`
+                                        ).join('')}
+                                        ${device.services.length > 3 ? `<div class="list-item">... and ${device.services.length - 3} more</div>` : ''}
+                                    </div>
+                                </div>
+                            ` : ''}
+                            <div class="last-seen">Last seen: ${device.last_seen}</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            devicesHTML += '</div>';
+            devicesContainer.innerHTML = devicesHTML;
+        }
+
+        function updateAlerts(alerts) {
+            const alertsContainer = document.getElementById('alerts-container');
+            
+            if (alerts.length === 0) {
+                alertsContainer.innerHTML = '<div class="no-devices">No alerts at this time.</div>';
+                return;
+            }
+
+            let alertsHTML = '';
+            alerts.slice(-10).reverse().forEach(alert => {
+                alertsHTML += `
+                    <div class="alert-item alert-${alert.severity.toLowerCase()}">
+                        <div class="alert-time">${new Date(alert.timestamp).toLocaleTimeString()}</div>
+                        <div class="alert-message">${alert.message}</div>
+                        <div class="alert-type">${alert.type} - ${alert.severity}</div>
+                    </div>
+                `;
+            });
+            
+            alertsContainer.innerHTML = alertsHTML;
+        }
+
+        function exportData() {
+            fetch('/api/network-data')
+                .then(response => response.json())
+                .then(data => {
+                    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `netsleuth_export_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+        }
+
+        function clearData() {
+            if (confirm('Are you sure you want to clear all data?')) {
+                fetch('/api/clear-data', { method: 'POST' })
+                    .then(() => {
+                        updateDashboard();
+                    })
+                    .catch(error => {
+                        console.error('Error clearing data:', error);
+                    });
+            }
+        }
+
+        function stopMonitoring() {
+            if (confirm('Are you sure you want to stop monitoring?')) {
+                fetch('/api/stop-monitoring', { method: 'POST' })
+                    .then(() => {
+                        alert('Monitoring stopped. Refresh the page to restart.');
+                    })
+                    .catch(error => {
+                        console.error('Error stopping monitoring:', error);
+                    });
+            }
+        }
+
+        // Search functionality
+        document.getElementById('device-search').addEventListener('input', function() {
+            updateDashboard();
+        });
+
+        // Initialize dashboard and start updates
         updateDashboard();
         setInterval(updateDashboard, 5000);
     </script>

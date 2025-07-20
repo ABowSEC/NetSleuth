@@ -15,4 +15,14 @@ WEB_PORT = 5000
 SUMMARY_INTERVAL = 30
 
 # Web interface update interval (seconds)
-WEB_UPDATE_INTERVAL = 5 
+WEB_UPDATE_INTERVAL = 5
+
+# Performance settings
+MAX_DEVICES = 1000
+MAX_CONNECTIONS_PER_DEVICE = 100
+MAX_DNS_QUERIES_PER_DEVICE = 50
+
+# Logging settings
+LOG_LEVEL = 'INFO'  # DEBUG, INFO, WARNING, ERROR
+LOG_TO_FILE = False
+LOG_FILE = 'netsleuth.log' 
