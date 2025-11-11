@@ -1,0 +1,1 @@
+# set up a venv of python 3.12  //tensor may have issues with newest python envs;

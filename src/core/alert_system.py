@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Dict, List, Callable
 from ..utils.device_mapper import get_hostname
 
+#TENSORFLOW SHOULD BEGIN UTILIZING THESE FoR ALERTS ONCE TENSORFLOw GETS IMPLEMENTED
+
 class AlertSystem:
     """Network monitoring alert system for security and performance events"""
     
