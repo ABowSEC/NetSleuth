@@ -413,6 +413,15 @@
                     <div class="no-devices">No alerts at this time.</div>
                 </div>
             </div>
+
+
+            <div class="alerts-section" style = "margin-top: 20px">
+                <h2 class="section-title">ML Detected Anomalies</h2>
+                <div id="anomalies-container">
+                    <div class="no-devices">No anomalies detected yet.</div>
+                </div>
+            </div>
+            
         </div>
 
         <div class="update-time">
@@ -444,6 +453,10 @@
 
                         // Update alerts
                         updateAlerts(data.alerts || []);
+
+                        //update ML
+                        updateAnomalies();
+
                     } catch (error) {
                         console.error('Error processing dashboard data:', error);
                     }
@@ -554,6 +567,39 @@
             
             alertsContainer.innerHTML = alertsHTML;
         }
+
+        function updateAnomalies() {
+            fetch('/api/anomalies').then(response => response.json()).then(anomalies => {
+                const container = document.getElementById('anomalies-container');
+
+                if (!anomalies || anomalies.length === 0) {
+                    container.innerHTML = '<div class="no-devices">No anomalies detected yet.</div>';
+                    return;
+                }
+
+                let html = '';
+                anomalies.slice(0, 15).forEach(ev => {
+                    const time = new Date(ev.timestamp).toLocaleTimeString();
+
+                    // color based on anomaly score (lower = more anomalous)
+                    let severityClass = 'alert-low';
+                    if (ev.score < -0.4) severityClass = 'alert-high';
+                    else if (ev.score < -0.25) severityClass = 'alert-medium';
+
+                    html += `
+                        <div class="alert-item ${severityClass}">
+                            <div class="alert-time">${time}</div>
+                            <div class="alert-message">Anomaly detected: ${ev.src_ip}:${ev.src_port} → ${ev.dst_ip}:${ev.dst_port}</div>
+                            <div class="alert-type">Score: ${ev.score.toFixed(3)} — Protocol: ${ev.protocol}</div>
+                        </div>
+                    `;
+                });
+
+                container.innerHTML = html;
+            })
+            .catch(err => console.error("Error loading anomalies:", err));
+        }
+
 
         function exportData() {
             fetch('/api/network-data')
