@@ -2,3 +2,6 @@ scapy
 psutil
 rich
 flask
+
+scikit-learn
+joblib

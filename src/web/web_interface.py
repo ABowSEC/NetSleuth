@@ -6,6 +6,9 @@ import time
 from datetime import datetime
 import json
 
+from src.core.anomaly_store import anomaly_store
+
+
 app = Flask(__name__)
 
 # Global variable to store the latest network data
@@ -52,6 +55,23 @@ def data_update_loop():
     while True:
         update_network_data()
         time.sleep(5)  # Update every 5 seconds
+
+@app.route('/api/anomalies')
+def get_anomalies():
+    #API ENDPOINT FOR ML DETECTED ANOMALIES;
+    """API endpoint to get ML-detected anomalies"""
+    
+    limit = request.args.get('limit', 200, type=int) #subj to change
+    events = anomaly_store.list()[:limit]
+    return jsonify(events)
+
+@app.route('/api/anomalies/stream')
+def anomalies_stream():
+    """Stream anomalies one-by-one for real-time charts."""
+    return jsonify({
+        "count": len(anomaly_store.list()),
+        "latest": anomaly_store.list()[:10]
+    })
 
 @app.route('/')
 def dashboard():
