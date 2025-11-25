@@ -12,7 +12,7 @@ from src.ml.feature_extractor import extract_features, FEATURE_NAMES
 
 
 OUTPUT_PATH = "data/training_packets.csv"
-CAPTURE_DURATION = 60  # seconds of normal traffic
+CAPTURE_DURATION = 300  # seconds of normal traffic
 
 def packet_handler(pkt, writer):
     feat = extract_features(pkt)
