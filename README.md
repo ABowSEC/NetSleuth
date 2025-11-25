@@ -268,3 +268,25 @@ This will show:
 ---
 
 **NetSleuth** - Your network, under your surveillance 
+
+### Machine Learning (Anomaly Detection)
+
+-Saved to models/isoforest.pkl
+
+### Useful Commands
+Collect test data
+-Python src/scripts/capture_training.py
+-CAPTURE_DURATION = 300 
+
+Creates
+-data/training_packets.csv
+
+Train
+-python src/scripts/train_model.py
+
+Generates
+-models/isoforest.pkl
+
+
+
+
