@@ -7,7 +7,10 @@ from .analyzer import analyze_packet
 
 from src.ml.feature_extractor import extract_features, as_vector
 from src.ml.model_manager import TrafficAnomalyModel
+
 from src.core.anomaly_store import anomaly_store, AnomalyEvent
+from src.core.suspicious_devices import suspicious_tracker
+
 from datetime import datetime
 
 try:
@@ -18,7 +21,7 @@ except ImportError:
 ml_model = TrafficAnomalyModel.load()
 
 VERBOSE = False
-WIN_OS = platform.system() == "Windows"
+WINDOWS = platform.system() == "Windows"
 
 def colored(text, color):
     _C = {"cyan": "\033[96m", "red": "\033[91m", "reset": "\033[0m"}
@@ -72,6 +75,7 @@ def packet_callback(pkt):
             extra=feat_dict,
         )
 
+        suspicious_tracker.register_anomaly(ip_src, result.score)
         anomaly_store.add(event)
         print(colored(
             f"[ML] Anomaly detected → {ip_src}:{src_port} → {ip_dst}:{dst_port} "
@@ -80,7 +84,7 @@ def packet_callback(pkt):
         ))
 def start_sniffing(interface, packet_count=0):
     # ---------- Windows: try L2 capture first, fall back to L3 ----------
-    if WIN_OS:
+    if WINDOWS:
         print("[i] Windows detected → attempting L2 capture for MAC addresses")
         
         try:
