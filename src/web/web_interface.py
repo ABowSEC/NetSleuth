@@ -1,6 +1,10 @@
 from flask import Flask, render_template, jsonify, request
 from ..core.device_tracker import device_log
 from ..core.alert_system import alert_system
+
+from ..core.suspicious_devices import suspicious_tracker
+
+
 import threading
 import time
 from datetime import datetime
@@ -224,6 +228,10 @@ def search_devices():
             results[ip] = device
     
     return jsonify(results)
+
+@app.route('/api/suspicous')
+def get_suspicous_device():
+    return jsonify(suspicious_tracker.get_top_suspicous(10))
 
 @app.route('/api/health')
 def health_check():
