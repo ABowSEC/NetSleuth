@@ -65,7 +65,7 @@ def packet_callback(pkt):
             proto = "UDP"
 
         event = AnomalyEvent(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now().isoformat(),
             src_ip=ip_src or "?",
             dst_ip=ip_dst or "?",
             src_port=src_port,
@@ -75,10 +75,12 @@ def packet_callback(pkt):
             extra=feat_dict,
         )
 
-        suspicious_tracker.register_anomaly(ip_src, result.score)
         anomaly_store.add(event)
+
+        suspicious_tracker.register_anomaly(ip_src, result.score)
+
         print(colored(
-            f"[ML] Anomaly detected → {ip_src}:{src_port} → {ip_dst}:{dst_port} "
+            f"[ML] Anomaly detected -> {ip_src}:{src_port} -> {ip_dst}:{dst_port} "
             f"(score={result.score:.3f})",
             "red"
         ))

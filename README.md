@@ -276,7 +276,7 @@ This will show:
 ### Useful Commands
 Collect test data
 -Python src/scripts/capture_training.py
--CAPTURE_DURATION = 300 
+-CAPTURE_DURATION = 300  (config in file)
 
 Creates
 -data/training_packets.csv

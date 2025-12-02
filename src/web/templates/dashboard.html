@@ -626,33 +626,36 @@
             .catch(err => console.error("Error loading anomalies:", err));
         }
 
-        function updateSuspcious(){
-            fetch('/api/suspicous')
-                .then(res=res.json())
+        function updateSuspicous() {
+            fetch('/api/suspicious')
+                .then(res => res.json())
                 .then(list => {
                     const elm = document.getElementById('suspicous-container');
 
-                    if(!list.length){
-                        elm.innerHTML = '<div class="no-devices">No suspicous devices.</div>';
+                    if (!list || list.length === 0) {
+                        elm.innerHTML = '<div class="no-devices">No suspicious devices.</div>';
                         return;
                     }
 
                     let html = "";
                     list.forEach(dev => {
-                        html += `
-                            <div class="suspicous-card">
-                                <div class="suspicous-level">${dev.level}</div>
-                                <div><strong>IP:</strong> ${dev.ip}</div>
-                                <div><strong>Score:</strong> ${dev.score.toFixed(3)}</div>
-                                <div><strong>Total anomalies:</strong> ${dev.total_anomalies}</div>
-                                <div><strong>Last seen:</strong> ${dev.last_seen}</div>
-                            </div>
-                        `;
-                    });
+                    html += `
+                        <div class="suspicous-card">
+                            <div class="suspicous-level"><strong>${dev.level}</strong></div>
+                            <div><strong>IP:</strong> ${dev.ip}</div>
+                            <div><strong>Score:</strong> ${dev.score.toFixed(3)}</div>
+                            <div><strong>Total anomalies:</strong> ${dev.total_anomalies}</div>
+                            <div><strong>Last seen:</strong> ${new Date(dev.last_seen).toLocaleTimeString()}</div>
+                        </div>
+                        <hr>
+                    `;
+                });
 
-                el.innerHTML = html;
-            });
+                elm.innerHTML = html;
+            })
+            .catch(err => console.error("Failed to load suspicious devices:", err));
         }
+
 
 
         function exportData() {
