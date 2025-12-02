@@ -26,7 +26,7 @@ network_data = {
 }
 
 def update_network_data():
-    """Update the global network data from device_log"""
+    """To update the global network data from device_log"""
     global network_data
     
     devices = {}
@@ -48,11 +48,12 @@ def update_network_data():
         total_dns_queries += len(data.get('dns_queries', []))
     
     network_data['devices'] = devices
-    network_data['last_update'] = datetime.now().strftime('%H:%M:%S')
+    network_data['last_update'] = datetime.now().strftime("%H:%M:%S")
     network_data['total_devices'] = len(devices)
     network_data['total_connections'] = total_connections
     network_data['total_dns_queries'] = total_dns_queries
     network_data['alerts'] = alert_system.get_alerts(50)  # Get last 50 alerts
+    network_data['suspicious_devices'] = suspicious_tracker.get_top_suspicious(10)
 
 def data_update_loop():
     """Background thread to continuously update network data"""
@@ -229,9 +230,9 @@ def search_devices():
     
     return jsonify(results)
 
-@app.route('/api/suspicous')
-def get_suspicous_device():
-    return jsonify(suspicious_tracker.get_top_suspicous(10))
+@app.route('/api/suspicious')
+def get_suspicious_device():
+    return jsonify(suspicious_tracker.get_top_suspicious(10))
 
 @app.route('/api/health')
 def health_check():
