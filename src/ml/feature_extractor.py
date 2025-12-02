@@ -1,60 +1,91 @@
-# src/ml/feature_extractor.py
-
-from typing import Dict, Any, List
+# feature_extractor.py
+import time
+from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.packet import Packet
-from scapy.layers.inet import IP, TCP, UDP
+
+# Track last timestamp per source IP (lightweight, no flow tracking)
+_last_seen = {}
 
 FEATURE_NAMES = [
+    "packet_size",
+    "ip_total_length",
+    "protocol",
     "src_port",
     "dst_port",
-    "length",
-    "protocol",
     "tcp_flags",
     "ttl",
+    "entropy_like",
+    "inter_arrival",
+    "is_broadcast"
 ]
 
+def extract_features(pkt: Packet):
+    """
+    Extract lightweight, ML-friendly numeric features.
+    Compatible with IsolationForest without normalization.
 
-def extract_features(pkt: Packet) -> Dict[str, float] | None:
     """
-    Extract a simple numeric feature vector from a Scapy packet.
-    Returns None if we can't extract anything useful.
-    """
+
+    # Drop packets without IP - ARP |-| LLDP still handled elsewhere
     if not pkt.haslayer(IP):
         return None
 
     ip = pkt[IP]
-    proto = ip.proto
-    length = len(pkt)
-    ttl = getattr(ip, "ttl", 0)
 
+    #  basic 
+    size = len(pkt)
+    ip_len = ip.len
+    ttl = ip.ttl
+
+    #  protocol encoding 
+    protocol = 0
     src_port = 0
     dst_port = 0
     tcp_flags = 0
 
     if pkt.haslayer(TCP):
-        tcp = pkt[TCP]
-        src_port = tcp.sport
-        dst_port = tcp.dport
-        tcp_flags = int(tcp.flags)
-        proto_id = 6  # TCP
+        protocol = 1
+        src_port = pkt[TCP].sport
+        dst_port = pkt[TCP].dport
+        tcp_flags = int(pkt[TCP].flags)
+
     elif pkt.haslayer(UDP):
-        udp = pkt[UDP]
-        src_port = udp.sport
-        dst_port = udp.dport
-        proto_id = 17  # UDP
-    else:
-        proto_id = proto  # other protocols: ICMP, etc.
+        protocol = 2
+        src_port = pkt[UDP].sport
+        dst_port = pkt[UDP].dport
+
+    elif pkt.haslayer(ICMP):
+        protocol = 3
+
+    #  entropy-like heuristic 
+    # For anomalies: high entropy = encrypted/random payload
+    # Normal: mDNS/SSDP have patterned payloads (low)
+    raw = bytes(pkt)[:32]
+    entropy_like = sum(raw) / (1 + len(raw))
+
+    # inter-arrival time per IP 
+    now = time.time()
+    last = _last_seen.get(ip.src, now)
+    inter_arrival = now - last
+    _last_seen[ip.src] = now
+
+    #  broadcast or multicast 
+    is_broadcast = 1 if ip.dst.endswith(".255") or ip.dst.startswith("224.") else 0
 
     return {
-        "src_port": float(src_port),
-        "dst_port": float(dst_port),
-        "length": float(length),
-        "protocol": float(proto_id),
-        "tcp_flags": float(tcp_flags),
-        "ttl": float(ttl),
+        "packet_size": size,
+        "ip_total_length": ip_len,
+        "protocol": protocol,
+        "src_port": src_port,
+        "dst_port": dst_port,
+        "tcp_flags": tcp_flags,
+        "ttl": ttl,
+        "entropy_like": entropy_like,
+        "inter_arrival": inter_arrival,
+        "is_broadcast": is_broadcast
     }
 
 
-def as_vector(feature_dict: Dict[str, float]) -> List[float]:
-    """Convert ordered feature dict to a vector list."""
-    return [feature_dict[name] for name in FEATURE_NAMES]
+def as_vector(feat: dict):
+    """Ensure consistent numeric order for ML model."""
+    return [feat[name] for name in FEATURE_NAMES]
