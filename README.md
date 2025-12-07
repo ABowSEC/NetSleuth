@@ -1,5 +1,5 @@
 ## NetSleuth
-A lightweight Python tool that passively monitors your local network. It shows active devices, their DNS queries, connections, and ARP activity. Without sending packets
+A lightweight Python tool that passively monitors your local network. It shows active devices, their DNS queries, connections, and ARP activity. Without sending packets. Now Includes ML Anomaly Detection with a trained model  
 
 
 
@@ -26,7 +26,17 @@ A lightweight Python tool that passively monitors your local network. It shows a
    To enable packet sniffing on Windows, install Npcap (free for personal use) from https://npcap.com.
    ```
 
-3. **Run NetSleuth**
+3.  **Train the model**
+  ```bash
+
+    # Collect test data
+    Python src/scripts/capture_training.py
+    #CAPTURE_DURATION = 300  (config in file)
+
+    # Train
+    python src/scripts/train_model.py
+  ```
+4. **Run NetSleuth**
    ```bash
    # Basic monitoring
    python main.py
