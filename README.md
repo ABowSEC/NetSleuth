@@ -23,19 +23,20 @@ A lightweight Python tool that passively monitors your local network. It shows a
 2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
-   To enable packet sniffing on Windows, install Npcap (free for personal use) from https://npcap.com.
+   # To enable packet sniffing on Windows, install Npcap (free for personal use) from https://npcap.com.
    ```
 
 3.  **Train the model**
-  ```bash
+    ```bash
 
     # Collect test data
     Python src/scripts/capture_training.py
     #CAPTURE_DURATION = 300  (config in file)
-
+    ```
+    ```bash
     # Train
     python src/scripts/train_model.py
-  ```
+    ```
 4. **Run NetSleuth**
    ```bash
    # Basic monitoring
