@@ -4,8 +4,9 @@ __pycache__/
 *$py.class
 
 #ML Data **file SPECIFIC**
-data/*.csv
-models/*.pkl
+#data/*.csv
+*.csv
+*.pkl
 
 # Virtual environments
 venv/
