@@ -1,0 +1,1 @@
+data from training cmd must go in this folder to run
