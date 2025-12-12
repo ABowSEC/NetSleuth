@@ -17,7 +17,7 @@ A lightweight Python tool that passively monitors your local network. It shows a
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd NetSleuth
+   cd /Path/To/NetSleuth
    ```
 
 2. **Install dependencies**
@@ -31,13 +31,15 @@ A lightweight Python tool that passively monitors your local network. It shows a
 
     # Collect test data
     Python src/scripts/capture_training.py
-    #CAPTURE_DURATION = 300  (config in file)
+    #Default CAPTURE_DURATION = 300  (config in file)
     ```
+    wait for training data to be captured
+    
     ```bash
     # Train
     python src/scripts/train_model.py
     ```
-4. **Run NetSleuth**
+5. **Run NetSleuth**
    ```bash
    # Basic monitoring
    python main.py
