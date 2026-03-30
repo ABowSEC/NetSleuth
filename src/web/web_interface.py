@@ -1,10 +1,17 @@
 from flask import Flask, render_template, jsonify, request
 from ..core.device_tracker import device_log
 from ..core.alert_system import alert_system
+
+from ..core.suspicious_devices import suspicious_tracker
+
+
 import threading
 import time
 from datetime import datetime
 import json
+
+from src.core.anomaly_store import anomaly_store
+
 
 app = Flask(__name__)
 
@@ -19,7 +26,7 @@ network_data = {
 }
 
 def update_network_data():
-    """Update the global network data from device_log"""
+    """To update the global network data from device_log"""
     global network_data
     
     devices = {}
@@ -41,17 +48,35 @@ def update_network_data():
         total_dns_queries += len(data.get('dns_queries', []))
     
     network_data['devices'] = devices
-    network_data['last_update'] = datetime.now().strftime('%H:%M:%S')
+    network_data['last_update'] = datetime.now().strftime("%H:%M:%S")
     network_data['total_devices'] = len(devices)
     network_data['total_connections'] = total_connections
     network_data['total_dns_queries'] = total_dns_queries
     network_data['alerts'] = alert_system.get_alerts(50)  # Get last 50 alerts
+    network_data['suspicious_devices'] = suspicious_tracker.get_top_suspicious(10)
 
 def data_update_loop():
     """Background thread to continuously update network data"""
     while True:
         update_network_data()
         time.sleep(5)  # Update every 5 seconds
+
+@app.route('/api/anomalies')
+def get_anomalies():
+    #API ENDPOINT FOR ML DETECTED ANOMALIES;
+    """API endpoint to get ML-detected anomalies"""
+    
+    limit = request.args.get('limit', 200, type=int) #subj to change
+    events = anomaly_store.list()[:limit]
+    return jsonify(events)
+
+@app.route('/api/anomalies/stream')
+def anomalies_stream():
+    """Stream anomalies one-by-one for real-time charts."""
+    return jsonify({
+        "count": len(anomaly_store.list()),
+        "latest": anomaly_store.list()[:10]
+    })
 
 @app.route('/')
 def dashboard():
@@ -204,6 +229,10 @@ def search_devices():
             results[ip] = device
     
     return jsonify(results)
+
+@app.route('/api/suspicious')
+def get_suspicious_device():
+    return jsonify(suspicious_tracker.get_top_suspicious(10))
 
 @app.route('/api/health')
 def health_check():

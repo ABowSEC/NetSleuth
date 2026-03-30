@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+#ML Data **file SPECIFIC**
+#data/*.csv
+*.csv
+*.pkl
+
 # Virtual environments
 venv/
 env/
