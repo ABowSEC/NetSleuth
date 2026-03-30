@@ -1,5 +1,5 @@
 ## NetSleuth
-A lightweight Python tool that passively monitors your local network. It shows active devices, their DNS queries, connections, and ARP activity. Without sending packets
+A lightweight Python tool that passively monitors your local network. It shows active devices, their DNS queries, connections, and ARP activity. Without sending packets. Now Includes ML Anomaly Detection with a trained model  
 
 
 
@@ -17,16 +17,29 @@ A lightweight Python tool that passively monitors your local network. It shows a
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd NetSleuth
+   cd /Path/To/NetSleuth
    ```
 
 2. **Install dependencies**
    ```bash
    pip install -r requirements.txt
-   To enable packet sniffing on Windows, install Npcap (free for personal use) from https://npcap.com.
+   # To enable packet sniffing on Windows, install Npcap (free for personal use) from https://npcap.com.
    ```
 
-3. **Run NetSleuth**
+3.  **Train the model**
+    ```bash
+
+    # Collect test data
+    Python src/scripts/capture_training.py
+    #Default CAPTURE_DURATION = 300  (config in file)
+    ```
+    wait for training data to be captured
+    
+    ```bash
+    # Train
+    python src/scripts/train_model.py
+    ```
+5. **Run NetSleuth**
    ```bash
    # Basic monitoring
    python main.py
@@ -268,3 +281,25 @@ This will show:
 ---
 
 **NetSleuth** - Your network, under your surveillance 
+
+### Machine Learning (Anomaly Detection)
+
+-Saved to models/isoforest.pkl
+
+### Useful Commands
+Collect test data
+-Python src/scripts/capture_training.py
+-CAPTURE_DURATION = 300  (config in file)
+
+Creates
+-data/training_packets.csv
+
+Train
+-python src/scripts/train_model.py
+
+Generates
+-models/isoforest.pkl
+
+
+
+
