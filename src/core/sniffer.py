@@ -1,15 +1,27 @@
 # sniffer.py
 import platform
 from scapy.all import sniff, conf, Ether, IP, ARP
+from scapy.layers.inet import IP, TCP, UDP
+
 from .analyzer import analyze_packet
+
+from src.ml.feature_extractor import extract_features, as_vector
+from src.ml.model_manager import TrafficAnomalyModel
+
+from src.core.anomaly_store import anomaly_store, AnomalyEvent
+from src.core.suspicious_devices import suspicious_tracker
+
+from datetime import datetime
 
 try:
     from scapy.all import L3RawSocket          # Linux/macOS only
 except ImportError:
     L3RawSocket = None
 
+ml_model = TrafficAnomalyModel.load()
+
 VERBOSE = False
-WIN_OS = platform.system() == "Windows"
+WINDOWS = platform.system() == "Windows"
 
 def colored(text, color):
     _C = {"cyan": "\033[96m", "red": "\033[91m", "reset": "\033[0m"}
@@ -22,11 +34,59 @@ def packet_callback(pkt):
     mac_src = pkt[Ether].src.lower() if pkt.haslayer(Ether) else None
     ip_src  = pkt[IP].src if pkt.haslayer(IP) else pkt[ARP].psrc if pkt.haslayer(ARP) else None
     ip_dst  = pkt[IP].dst if pkt.haslayer(IP) else pkt[ARP].pdst if pkt.haslayer(ARP) else None
+
+    # ----- existing analysis pipeline -----
     analyze_packet(pkt, mac_src=mac_src, ip_src=ip_src, ip_dst=ip_dst)
 
+    # ANOMALY  DETECTION
+    feat_dict = extract_features(pkt)
+    if feat_dict is None:
+        return  # Not a packet type we extract from
+
+    vec = as_vector(feat_dict)
+    result = ml_model.predict_one(vec)
+
+    if result is None:
+        return  # No model loaded → ML disabled
+
+    if result.is_anomaly:
+        # Collect some packet metadata for the event
+        src_port = 0
+        dst_port = 0
+        proto = "OTHER"
+
+        if pkt.haslayer(TCP):
+            src_port = int(pkt[TCP].sport)
+            dst_port = int(pkt[TCP].dport)
+            proto = "TCP"
+        elif pkt.haslayer(UDP):
+            src_port = int(pkt[UDP].sport)
+            dst_port = int(pkt[UDP].dport)
+            proto = "UDP"
+
+        event = AnomalyEvent(
+            timestamp=datetime.now().isoformat(),
+            src_ip=ip_src or "?",
+            dst_ip=ip_dst or "?",
+            src_port=src_port,
+            dst_port=dst_port,
+            protocol=proto,
+            score=result.score,
+            extra=feat_dict,
+        )
+
+        anomaly_store.add(event)
+
+        suspicious_tracker.register_anomaly(ip_src, result.score)
+
+        print(colored(
+            f"[ML] Anomaly detected -> {ip_src}:{src_port} -> {ip_dst}:{dst_port} "
+            f"(score={result.score:.3f})",
+            "red"
+        ))
 def start_sniffing(interface, packet_count=0):
     # ---------- Windows: try L2 capture first, fall back to L3 ----------
-    if WIN_OS:
+    if WINDOWS:
         print("[i] Windows detected → attempting L2 capture for MAC addresses")
         
         try:

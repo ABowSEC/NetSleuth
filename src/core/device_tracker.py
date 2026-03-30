@@ -80,43 +80,6 @@ def get_device_summary():
         })
     return summary
 
-def cleanup_old_devices(timeout_minutes=60):
-    """Remove devices that haven't been seen recently."""
-    current_time = time.time()
-    timeout_seconds = timeout_minutes * 60
-    
-    devices_to_remove = []
-    for ip, data in device_log.items():
-        last_seen_str = data.get('last_seen', '00:00:00')
-        try:
-            # Parse time string to timestamp
-            time_parts = last_seen_str.split(':')
-            if len(time_parts) == 3:
-                hours, minutes, seconds = map(int, time_parts)
-                # Calculate seconds since midnight
-                last_seen_seconds = hours * 3600 + minutes * 60 + seconds
-                current_seconds = int(current_time % 86400)  # Seconds since midnight
-                
-                # Handle day wrap-around
-                if current_seconds < last_seen_seconds:
-                    current_seconds += 86400
-                
-                if (current_seconds - last_seen_seconds) > timeout_seconds:
-                    devices_to_remove.append(ip)
-        except (ValueError, IndexError):
-            # If we can't parse the time, keep the device
-            continue
-    
-    # Remove old devices
-    for ip in devices_to_remove:
-        del device_log[ip]
-        alert_system.create_alert(
-            'device_timeout',
-            'LOW',
-            f"Device {ip} timed out and was removed",
-            {'ip': ip, 'timeout_minutes': timeout_minutes}
-        )
-
 def get_network_statistics():
     """Get comprehensive network statistics."""
     total_devices = len(device_log)
@@ -148,10 +111,6 @@ def get_network_statistics():
         'device_types': device_types,
         'active_alerts': len(alert_system.get_alerts())
     }
-    
-    # Device type breakdown, top queries, connection patterns
-    # This part is not provided in the original code or the new code block
-    # It's assumed to be implemented here
     
     return statistics
 
