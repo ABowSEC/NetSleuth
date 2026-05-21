@@ -69,7 +69,7 @@ def update_device(ip, mac, field, value):
 def get_device_summary():
     """Get a summary of all devices."""
     summary = []
-    for ip, data in device_log.items():
+    for ip, data in list(device_log.items()):
         summary.append({
             'ip': ip,
             'hostname': data.get('hostname', 'Unknown'),
@@ -82,14 +82,15 @@ def get_device_summary():
 
 def get_network_statistics():
     """Get comprehensive network statistics."""
-    total_devices = len(device_log)
-    total_connections = sum(len(d.get('connections', [])) for d in device_log.values())
-    total_dns_queries = sum(len(d.get('dns_queries', [])) for d in device_log.values())
-    total_services = sum(len(d.get('services', [])) for d in device_log.values())
-    
+    snapshot = list(device_log.values())
+    total_devices = len(snapshot)
+    total_connections = sum(len(d.get('connections', [])) for d in snapshot)
+    total_dns_queries = sum(len(d.get('dns_queries', [])) for d in snapshot)
+    total_services = sum(len(d.get('services', [])) for d in snapshot)
+
     # Device type breakdown
     device_types = {}
-    for data in device_log.values():
+    for data in snapshot:
         hostname = data.get('hostname', 'Unknown')
         if 'Apple' in hostname:
             device_types['Apple'] = device_types.get('Apple', 0) + 1
@@ -117,7 +118,7 @@ def get_network_statistics():
 def print_summary():
     
     print("\n==================== NETWORK SUMMARY ====================")
-    for ip, data in device_log.items():
+    for ip, data in list(device_log.items()):
         print(f"\n[Device: {data['hostname']}] {ip}")
         if data.get("mac"):
             print(f"  ▸ MAC: {data['mac']}")
