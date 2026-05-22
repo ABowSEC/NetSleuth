@@ -47,14 +47,14 @@ Configure known devices for better identification and naming.
 ```json
 {
   "ip": {
-    "10.0.0.6": "My Laptop",
-    "10.0.0.9": "LG TV",
-    "192.168.1.1": "Router"
+    "192.0.2.10": "My Laptop",
+    "192.0.2.20": "Smart TV",
+    "192.0.2.1": "Router"
   },
   "mac": {
-    "74:e6:b8:d5:dd:36": "LG TV",
-    "fc:fb:fb:12:34:56": "Amazon Echo",
-    "aa:bb:cc:dd:ee:ff": "My Phone"
+    "aa:bb:cc:dd:ee:ff": "Smart TV",
+    "11:22:33:44:55:66": "Amazon Echo",
+    "22:33:44:55:66:77": "My Phone"
   },
   "mac_prefix": {
     "74:e6:b8": "LG Electronics",
@@ -240,15 +240,15 @@ WEB_UPDATE_INTERVAL = 1
 ```json
 {
   "ip": {
-    "192.168.1.1": "Router",
-    "192.168.1.100": "My Laptop",
-    "192.168.1.101": "My Phone",
-    "192.168.1.102": "Smart TV"
+    "192.0.2.1": "Router",
+    "192.0.2.10": "My Laptop",
+    "192.0.2.11": "My Phone",
+    "192.0.2.20": "Smart TV"
   },
   "mac": {
     "aa:bb:cc:dd:ee:ff": "My Laptop",
     "11:22:33:44:55:66": "My Phone",
-    "74:e6:b8:d5:dd:36": "LG Smart TV"
+    "22:33:44:55:66:77": "Smart TV"
   },
   "mac_prefix": {
     "74:e6:b8": "LG Electronics",
@@ -264,11 +264,11 @@ WEB_UPDATE_INTERVAL = 1
 ```json
 {
   "ip": {
-    "10.0.0.1": "Gateway",
-    "10.0.0.10": "File Server",
-    "10.0.0.20": "Print Server",
-    "10.0.0.100": "Workstation 1",
-    "10.0.0.101": "Workstation 2"
+    "192.0.2.1": "Gateway",
+    "192.0.2.10": "File Server",
+    "192.0.2.20": "Print Server",
+    "192.0.2.100": "Workstation 1",
+    "192.0.2.101": "Workstation 2"
   },
   "mac": {
     "00:11:22:33:44:55": "File Server",
@@ -287,12 +287,12 @@ WEB_UPDATE_INTERVAL = 1
 ```json
 {
   "ip": {
-    "192.168.1.1": "Router",
-    "192.168.1.10": "Smart Hub"
+    "192.0.2.1": "Router",
+    "192.0.2.10": "Smart Hub"
   },
   "mac": {
-    "fc:fb:fb:12:34:56": "Amazon Echo",
-    "74:e6:b8:d5:dd:36": "LG Smart TV",
+    "11:22:33:44:55:66": "Amazon Echo",
+    "22:33:44:55:66:77": "Smart TV",
     "aa:bb:cc:dd:ee:ff": "Smart Bulb"
   },
   "mac_prefix": {
