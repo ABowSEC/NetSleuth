@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, jsonify, request
 from ..core.device_tracker import device_log
 from ..core.alert_system import alert_system
 
@@ -78,10 +78,6 @@ def anomalies_stream():
         "latest": anomaly_store.list()[:10]
     })
 
-@app.route('/')
-def dashboard():
-    """Main dashboard page"""
-    return render_template('dashboard.html')
 
 @app.route('/api/network-data')
 def get_network_data():
