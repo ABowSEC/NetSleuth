@@ -3,9 +3,29 @@ from scapy.layers.inet import TCP, UDP, IP
 from scapy.layers.dns  import DNS
 from scapy.layers.l2   import ARP, Ether
 from scapy.packet      import Raw
+try:
+    from scapy.layers.dhcp import DHCP, BOOTP
+    _DHCP_AVAILABLE = True
+except ImportError:
+    _DHCP_AVAILABLE = False
 import time
 import logging
+import ipaddress
 from .device_tracker import update_device
+
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network('10.0.0.0/8'),
+    ipaddress.ip_network('172.16.0.0/12'),
+    ipaddress.ip_network('192.168.0.0/16'),
+    ipaddress.ip_network('169.254.0.0/16'),
+]
+
+def _is_local(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+        return any(addr in net for net in _PRIVATE_NETWORKS)
+    except ValueError:
+        return False
 
 try:
     from config import VERBOSE, DEBUG_MODE
@@ -47,8 +67,12 @@ def analyze_packet(pkt, mac_src=None, ip_src=None, ip_dst=None):
         if pkt.haslayer(DNS):
             handle_dns(pkt, mac_src, ip_src, now)
 
-        # UDP (non-DNS)
-        if pkt.haslayer(UDP) and not pkt.haslayer(DNS):
+        # DHCP: must be checked before generic UDP so port 67/68 isn't logged as a connection
+        if _DHCP_AVAILABLE and pkt.haslayer(DHCP):
+            handle_dhcp(pkt, now)
+
+        # UDP (non-DNS, non-DHCP)
+        elif pkt.haslayer(UDP) and not pkt.haslayer(DNS):
             handle_udp(pkt[UDP], ip_src, ip_dst, mac_src, now)
 
         # TCP
@@ -90,16 +114,43 @@ def handle_dns(pkt, mac_src, ip_src, now):
         pass
 
 def handle_udp(udp, ip_src, ip_dst, mac_src, now):
-    if not ip_src or not ip_dst:
+    if not ip_src or not ip_dst or not _is_local(ip_src):
         return
     if VERBOSE:
-        print(colored(f"[{now}] [UDP] {ip_src}:{udp.sport} → {ip_dst}:{udp.dport}", "blue"))
+        print(colored(f"[{now}] [UDP] {ip_src}:{udp.sport} -> {ip_dst}:{udp.dport}", "blue"))
     update_device(ip_src, mac_src, "connections", f"{ip_dst}:{udp.dport}")
 
+def handle_dhcp(pkt, now):
+    try:
+        chaddr = pkt[BOOTP].chaddr
+        mac = ':'.join(f'{b:02x}' for b in chaddr[:6])
+
+        options = {}
+        for opt in pkt[DHCP].options:
+            if isinstance(opt, tuple) and len(opt) == 2:
+                options[opt[0]] = opt[1]
+
+        ip = pkt[BOOTP].ciaddr
+        if ip == '0.0.0.0':
+            ip = options.get('requested_addr')
+        if not ip or ip == '0.0.0.0':
+            return
+
+        hostname = options.get('hostname', b'')
+        if isinstance(hostname, bytes):
+            hostname = hostname.decode('utf-8', errors='ignore').strip()
+
+        if hostname:
+            update_device(ip, mac, 'hostname', hostname)
+            if VERBOSE:
+                print(colored(f"[{now}] [DHCP] {ip} ({mac}) -> {hostname}", "green"))
+    except Exception as e:
+        logger.debug("DHCP parse error: %s", e)
+
 def handle_tcp(tcp, ip_src, ip_dst, mac_src, now):
-    if not ip_src or not ip_dst:
+    if not ip_src or not ip_dst or not _is_local(ip_src):
         return
     flags = tcp.sprintf("%TCP.flags%")
     if VERBOSE:
-        print(colored(f"[{now}] [TCP] {ip_src}:{tcp.sport} → {ip_dst}:{tcp.dport} [{flags}]", "cyan"))
+        print(colored(f"[{now}] [TCP] {ip_src}:{tcp.sport} -> {ip_dst}:{tcp.dport} [{flags}]", "cyan"))
     update_device(ip_src, mac_src, "connections", f"{ip_dst}:{tcp.dport}")
