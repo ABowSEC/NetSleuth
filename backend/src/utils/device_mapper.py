@@ -3,17 +3,28 @@ import json, os, re, socket
 
 CFG = os.path.join(os.path.dirname(__file__), "..", "config", "known_devices.json")
 
-# Load configuration with error handling
 try:
     with open(CFG, "r") as f:
         _data = json.load(f)
 except (FileNotFoundError, json.JSONDecodeError) as e:
     print(f"Warning: Could not load device configuration: {e}")
-    _data = {"ip": {}, "mac": {}, "mac_prefix": {}}
+    _data = {"ip": {}, "mac": {}}
 
-_ip_lookup       = {k.lower(): v for k, v in _data.get("ip", {}).items()}
-_mac_lookup      = {k.lower(): v for k, v in _data.get("mac", {}).items()}
-_mac_prefix_lkp  = {k.lower(): v for k, v in _data.get("mac_prefix", {}).items()}
+_ip_lookup  = {k.lower(): v for k, v in _data.get("ip", {}).items()}
+_mac_lookup = {k.lower(): v for k, v in _data.get("mac", {}).items()}
+
+# Scapy's full IEEE OUI database (30,000+ vendors)
+try:
+    from scapy.config import conf as _scapy_conf
+    def _oui_vendor(mac: str) -> str | None:
+        try:
+            vendor = _scapy_conf.manufdb._get_manuf(mac)
+            return vendor or None
+        except Exception:
+            return None
+except ImportError:
+    def _oui_vendor(mac: str) -> str | None:
+        return None
 
 def _detect_gateway_ips():
     """Infer the likely gateway IP from the local network interface."""
@@ -84,30 +95,25 @@ def identify_device_by_behavior(ip, dns_queries=None, connections=None):
 
 def get_hostname(ip=None, mac=None, dns_queries=None, connections=None):
     """Get device hostname from IP or MAC address, with behavioral analysis"""
-    # Try IP lookup first
     if ip and ip.lower() in _ip_lookup:
         return _ip_lookup[ip.lower()]
-    
-    # Try MAC lookup
+
     if mac:
         mac = normal(mac)
         if mac and mac in _mac_lookup:
             return _mac_lookup[mac]
-        
-        # Try MAC prefix lookup
-        if mac and len(mac.split(":")) >= 3:
-            prefix = ":".join(mac.split(":")[:3])
-            if prefix in _mac_prefix_lkp:
-                return _mac_prefix_lkp[prefix]
-    
-    # Try behavioral identification
+
+    # Behavioral patterns give more specific names than the OUI vendor
     if ip:
         behavior_id = identify_device_by_behavior(ip, dns_queries, connections)
         if behavior_id:
             return behavior_id
-    
-    # Generate a friendly name if we have an IP
+
+    if mac:
+        vendor = _oui_vendor(mac)
+        if vendor:
+            return vendor
+
     if ip:
         return f"Device ({ip})"
-    
     return "Unknown Device"
