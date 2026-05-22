@@ -43,12 +43,12 @@ Returns comprehensive network monitoring data including devices, statistics, and
 ```json
 {
   "devices": {
-    "10.0.0.6": {
+    "192.0.2.10": {
       "hostname": "My Laptop",
       "mac": "aa:bb:cc:dd:ee:ff",
       "dns_queries": ["google.com", "github.com"],
       "connections": ["8.8.8.8:53", "140.82.112.25:443"],
-      "services": ["ARP→10.0.0.1"],
+      "services": ["ARP→192.0.2.1"],
       "last_seen": "14:30:25",
       "connection_count": 2,
       "dns_count": 2
@@ -79,12 +79,12 @@ Returns only the devices data without statistics.
 **Response Schema:**
 ```json
 {
-  "10.0.0.6": {
+  "192.0.2.10": {
     "hostname": "My Laptop",
     "mac": "aa:bb:cc:dd:ee:ff",
     "dns_queries": ["google.com"],
     "connections": ["8.8.8.8:53"],
-    "services": ["ARP→10.0.0.1"],
+    "services": ["ARP→192.0.2.1"],
     "last_seen": "14:30:25",
     "connection_count": 1,
     "dns_count": 1
@@ -204,7 +204,7 @@ $response.devices | ForEach-Object {
 curl -s http://localhost:5000/api/network-data | jq '.'
 
 # Get specific device information
-curl -s http://localhost:5000/api/network-data | jq '.devices["10.0.0.6"]'
+curl -s http://localhost:5000/api/network-data | jq '.devices["192.0.2.10"]'
 
 # Get statistics only
 curl -s http://localhost:5000/api/network-data | jq '{total_devices, total_connections, total_dns_queries}'
