@@ -110,10 +110,10 @@ Configure known devices in `src/config/known_devices.json`:
 {
   "ip": {
     "192.0.2.10": "My Laptop",
-    "192.0.2.20": "LG TV"
+    "192.0.2.20": "Smart TV"
   },
   "mac": {
-    "aa:bb:cc:dd:ee:ff": "LG TV",
+    "aa:bb:cc:dd:ee:ff": "Smart TV",
     "11:22:33:44:55:66": "Amazon Echo"
   },
   "mac_prefix": {

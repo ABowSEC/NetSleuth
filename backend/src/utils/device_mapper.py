@@ -1,5 +1,5 @@
 # device_mapper.py
-import json, os, re
+import json, os, re, socket
 
 CFG = os.path.join(os.path.dirname(__file__), "..", "config", "known_devices.json")
 
@@ -14,6 +14,19 @@ except (FileNotFoundError, json.JSONDecodeError) as e:
 _ip_lookup       = {k.lower(): v for k, v in _data.get("ip", {}).items()}
 _mac_lookup      = {k.lower(): v for k, v in _data.get("mac", {}).items()}
 _mac_prefix_lkp  = {k.lower(): v for k, v in _data.get("mac_prefix", {}).items()}
+
+def _detect_gateway_ips():
+    """Infer the likely gateway IP from the local network interface."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+        prefix = local_ip.rsplit(".", 1)[0]
+        return {prefix + ".1"}
+    except Exception:
+        return set()
+
+_GATEWAY_IPS = _detect_gateway_ips()
 
 def normal(mac):
     """Normalize aa:bb:cc:dd:ee:ff  OR 74-E6-B8-D5-DD-36 → aa:bb:cc:dd:ee:ff"""
@@ -60,7 +73,7 @@ def identify_device_by_behavior(ip, dns_queries=None, connections=None):
         return "Mobile Device"
     
     # Routers/Gateways
-    if ip in ['192.0.2.1', '192.168.1.1', '192.168.0.1']:
+    if ip in _GATEWAY_IPS:
         return "Router/Gateway"
     
     # DNS servers
