@@ -11,6 +11,11 @@ import numpy as np
 from sklearn.ensemble import IsolationForest
 
 
+try:
+    from config import ML_ANOMALY_THRESHOLD
+except ImportError:
+    ML_ANOMALY_THRESHOLD = -0.2
+
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "models", "isoforest.pkl")
 
 
@@ -30,7 +35,7 @@ class TrafficAnomalyModel:
         self.threshold = threshold
 
     @classmethod
-    def load(cls, path: str = MODEL_PATH, threshold: float = -0.2) -> "TrafficAnomalyModel":
+    def load(cls, path: str = MODEL_PATH, threshold: float = ML_ANOMALY_THRESHOLD) -> "TrafficAnomalyModel":
         if not os.path.exists(path):
             print(f"[ML] No model found at {path}, running without ML.")
             return cls(model=None, threshold=threshold)

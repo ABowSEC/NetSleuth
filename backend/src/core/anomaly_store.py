@@ -1,8 +1,11 @@
-
 from collections import deque
 from dataclasses import dataclass, asdict
 from typing import Deque, Dict, Any, List
-from datetime import datetime
+
+try:
+    from config import ML_ANOMALY_STORE_MAXLEN
+except ImportError:
+    ML_ANOMALY_STORE_MAXLEN = 500
 
 
 @dataclass
@@ -18,7 +21,7 @@ class AnomalyEvent:
 
 
 class AnomalyStore:
-    def __init__(self, maxlen: int = 500):
+    def __init__(self, maxlen: int = ML_ANOMALY_STORE_MAXLEN):
         self._events: Deque[AnomalyEvent] = deque(maxlen=maxlen)
 
     def add(self, event: AnomalyEvent) -> None:

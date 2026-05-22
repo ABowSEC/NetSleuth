@@ -1,13 +1,23 @@
 # alert_system.py
-import time
 import json
 from datetime import datetime
-from typing import Dict, List, Callable
+from typing import Dict, List, Callable, Set, Tuple
 from ..utils.device_mapper import get_hostname
+
+try:
+    from config import (
+        ALERT_HIGH_CONNECTION_THRESHOLD,
+        ALERT_PORT_SCAN_THRESHOLD,
+        ALERTS_PANEL_LIMIT,
+    )
+except ImportError:
+    ALERT_HIGH_CONNECTION_THRESHOLD = 50
+    ALERT_PORT_SCAN_THRESHOLD = 20
+    ALERTS_PANEL_LIMIT = 50
 
 class AlertSystem:
     """Network monitoring alert system for security and performance events"""
-    
+
     def __init__(self):
         self.alerts = []
         self.alert_handlers = []
@@ -17,8 +27,10 @@ class AlertSystem:
             'high_connection_rate': True,
             'unknown_device': True,
             'port_scan': True,
-            'data_exfiltration': True
+            'data_exfiltration': True,
         }
+        # Deduplication: tracks (alert_type, key) pairs already alerted
+        self._alerted: Set[Tuple[str, str]] = set()
         
     def add_alert_handler(self, handler: Callable):
         """Add a custom alert handler function"""
@@ -78,60 +90,65 @@ class AlertSystem:
         """Check for suspicious DNS queries"""
         if not self.alert_rules['suspicious_dns']:
             return
-            
+
         suspicious_domains = [
             'malware', 'virus', 'trojan', 'botnet', 'c2', 'command',
-            'control', 'exfil', 'data', 'steal', 'crypto', 'mining'
+            'control', 'exfil', 'steal', 'crypto', 'mining'
         ]
-        
+
         for query in dns_queries:
+            key = ('suspicious_dns', f"{ip}:{query}")
+            if key in self._alerted:
+                continue
             query_lower = query.lower()
             for suspicious in suspicious_domains:
                 if suspicious in query_lower:
+                    self._alerted.add(key)
                     self.create_alert(
-                        'suspicious_dns',
-                        'HIGH',
+                        'suspicious_dns', 'HIGH',
                         f"Suspicious DNS query from {ip}: {query}",
                         {'ip': ip, 'query': query, 'suspicious_term': suspicious}
                     )
                     break
-    
-    def check_high_connection_rate(self, ip: str, connections: List[str], threshold: int = 50):
+
+    def check_high_connection_rate(self, ip: str, connections: List[str]):
         """Check for unusually high connection rates"""
         if not self.alert_rules['high_connection_rate']:
             return
-            
-        if len(connections) > threshold:
-            self.create_alert(
-                'high_connection_rate',
-                'MEDIUM',
-                f"High connection rate from {ip}: {len(connections)} connections",
-                {'ip': ip, 'connection_count': len(connections), 'threshold': threshold}
-            )
-    
+
+        count = len(connections)
+        if count > ALERT_HIGH_CONNECTION_THRESHOLD:
+            key = ('high_connection_rate', f"{ip}:{count // 10}")
+            if key not in self._alerted:
+                self._alerted.add(key)
+                self.create_alert(
+                    'high_connection_rate', 'MEDIUM',
+                    f"High connection rate from {ip}: {count} connections",
+                    {'ip': ip, 'connection_count': count, 'threshold': ALERT_HIGH_CONNECTION_THRESHOLD}
+                )
+
     def check_port_scan(self, ip: str, connections: List[str]):
         """Detect potential port scanning activity"""
         if not self.alert_rules['port_scan']:
             return
-            
-        # Extract unique ports
+
         ports = set()
         for conn in connections:
             if ':' in conn:
                 try:
-                    port = int(conn.split(':')[-1])
-                    ports.add(port)
+                    ports.add(int(conn.split(':')[-1]))
                 except ValueError:
                     continue
-        
-        # Alert if many different ports are accessed
-        if len(ports) > 20:
-            self.create_alert(
-                'port_scan',
-                'HIGH',
-                f"Potential port scan from {ip}: {len(ports)} different ports",
-                {'ip': ip, 'ports': list(ports), 'port_count': len(ports)}
-            )
+
+        if len(ports) > ALERT_PORT_SCAN_THRESHOLD:
+            key = ('port_scan', f"{ip}:{len(ports) // 5}")
+            if key not in self._alerted:
+                self._alerted.add(key)
+                self.create_alert(
+                    'port_scan', 'HIGH',
+                    f"Potential port scan from {ip}: {len(ports)} different ports",
+                    {'ip': ip, 'port_count': len(ports)}
+                )
     
     def check_data_exfiltration(self, ip: str, connections: List[str]):
         """Detect potential data exfiltration patterns"""

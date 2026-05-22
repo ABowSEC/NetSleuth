@@ -1,6 +1,13 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+try:
+    from config import SUSPICIOUS_SCORE_LOW, SUSPICIOUS_SCORE_MEDIUM, SUSPICIOUS_SCORE_HIGH
+except ImportError:
+    SUSPICIOUS_SCORE_LOW    = -0.15
+    SUSPICIOUS_SCORE_MEDIUM = -0.35
+    SUSPICIOUS_SCORE_HIGH   = -0.60
+
 class SuspiciousDeviceTracker:
     SEVERITY_RANK = {
         "NORMAL": 0,
@@ -23,11 +30,11 @@ class SuspiciousDeviceTracker:
     def _severity(self, score):
         if score is None:
             return "NORMAL"
-        if score > -0.15:
+        if score > SUSPICIOUS_SCORE_LOW:
             return "LOW"
-        elif score > -0.35:
+        elif score > SUSPICIOUS_SCORE_MEDIUM:
             return "MEDIUM"
-        elif score > -0.60:
+        elif score > SUSPICIOUS_SCORE_HIGH:
             return "HIGH"
         else:
             return "CRITICAL"

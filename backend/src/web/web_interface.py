@@ -1,16 +1,19 @@
 from flask import Flask, jsonify, request
-from ..core.device_tracker import device_log
+from ..core.device_tracker import device_log, purge_stale_devices
 from ..core.alert_system import alert_system
-
 from ..core.suspicious_devices import suspicious_tracker
-
 
 import threading
 import time
 from datetime import datetime
-import json
 
 from src.core.anomaly_store import anomaly_store
+
+try:
+    from config import WEB_UPDATE_INTERVAL, ALERTS_PANEL_LIMIT
+except ImportError:
+    WEB_UPDATE_INTERVAL = 5
+    ALERTS_PANEL_LIMIT = 50
 
 
 app = Flask(__name__)
@@ -52,14 +55,21 @@ def update_network_data():
     network_data['total_devices'] = len(devices)
     network_data['total_connections'] = total_connections
     network_data['total_dns_queries'] = total_dns_queries
-    network_data['alerts'] = alert_system.get_alerts(50)  # Get last 50 alerts
+    network_data['alerts'] = alert_system.get_alerts(ALERTS_PANEL_LIMIT)
     network_data['suspicious_devices'] = suspicious_tracker.get_top_suspicious(10)
+
+_purge_counter = 0
 
 def data_update_loop():
     """Background thread to continuously update network data"""
+    global _purge_counter
     while True:
         update_network_data()
-        time.sleep(5)  # Update every 5 seconds
+        _purge_counter += 1
+        if _purge_counter >= 12:  # every ~60s (12 × 5s)
+            purge_stale_devices()
+            _purge_counter = 0
+        time.sleep(WEB_UPDATE_INTERVAL)
 
 @app.route('/api/anomalies')
 def get_anomalies():

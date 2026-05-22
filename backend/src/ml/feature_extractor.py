@@ -1,10 +1,16 @@
 # feature_extractor.py
 import time
+from collections import OrderedDict
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.packet import Packet
 
-# Track last timestamp per source IP (lightweight, no flow tracking)
-_last_seen = {}
+try:
+    from config import ML_LAST_SEEN_MAX
+except ImportError:
+    ML_LAST_SEEN_MAX = 2000
+
+# Bounded OrderedDict: evicts oldest entry when cap is reached
+_last_seen: OrderedDict = OrderedDict()
 
 FEATURE_NAMES = [
     "packet_size",
@@ -63,11 +69,14 @@ def extract_features(pkt: Packet):
     raw = bytes(pkt)[:32]
     entropy_like = sum(raw) / (1 + len(raw))
 
-    # inter-arrival time per IP 
+    # inter-arrival time per IP (bounded to prevent unbounded growth)
     now = time.time()
     last = _last_seen.get(ip.src, now)
     inter_arrival = now - last
     _last_seen[ip.src] = now
+    _last_seen.move_to_end(ip.src)
+    if len(_last_seen) > ML_LAST_SEEN_MAX:
+        _last_seen.popitem(last=False)
 
     #  broadcast or multicast 
     is_broadcast = 1 if ip.dst.endswith(".255") or ip.dst.startswith("224.") else 0

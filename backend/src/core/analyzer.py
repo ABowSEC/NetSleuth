@@ -4,14 +4,16 @@ from scapy.layers.dns  import DNS
 from scapy.layers.l2   import ARP, Ether
 from scapy.packet      import Raw
 import time
-from .device_tracker import update_device   #  (ip, mac, field, value)
+import logging
+from .device_tracker import update_device
 
-# Import configuration
 try:
     from config import VERBOSE, DEBUG_MODE
 except ImportError:
     VERBOSE = False
     DEBUG_MODE = False
+
+logger = logging.getLogger(__name__)
 
 devices_seen = {}
 
@@ -61,6 +63,7 @@ def analyze_packet(pkt, mac_src=None, ip_src=None, ip_dst=None):
                     print(colored(f"[{now}] [mDNS] Possible device info: {raw}", "green"))
 
     except Exception as e:
+        logger.debug("Error processing packet: %s", e, exc_info=True)
         if VERBOSE:
             print(colored(f"[!] Error processing packet: {e}", "red"))
 

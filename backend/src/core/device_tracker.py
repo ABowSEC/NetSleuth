@@ -1,15 +1,26 @@
 # deviceTracker.py
-import time
+from datetime import datetime, timedelta
 from ..utils.device_mapper import get_hostname
 from .alert_system import alert_system
+
+try:
+    from config import (
+        MAX_CONNECTIONS_PER_DEVICE,
+        MAX_DNS_QUERIES_PER_DEVICE,
+        DEVICE_STALE_HOURS,
+    )
+except ImportError:
+    MAX_CONNECTIONS_PER_DEVICE = 100
+    MAX_DNS_QUERIES_PER_DEVICE = 50
+    DEVICE_STALE_HOURS = 24
 
 # Global device activity log
 device_log = {}
 
 def update_device(ip, mac, field, value):
     """Update device log with new activity."""
-    now = time.strftime('%H:%M:%S')
-    
+    now = datetime.now().isoformat()
+
     # Initialize device entry if not exists
     if ip not in device_log:
         device_log[ip] = {
@@ -20,10 +31,10 @@ def update_device(ip, mac, field, value):
             'services': [],
             'last_seen': now
         }
-        
+
         # Check for new device alert
         alert_system.check_new_device(ip, mac, device_log)
-    
+
     # Update last seen time
     device_log[ip]['last_seen'] = now
     
@@ -45,7 +56,6 @@ def update_device(ip, mac, field, value):
     elif field == 'connections':
         if value not in device_log[ip]['connections']:
             device_log[ip]['connections'].append(value)
-            # Check for high connection rates
             alert_system.check_high_connection_rate(ip, device_log[ip]['connections'])
             # Check for port scanning
             alert_system.check_port_scan(ip, device_log[ip]['connections'])
@@ -56,13 +66,13 @@ def update_device(ip, mac, field, value):
         if value not in device_log[ip]['services']:
             device_log[ip]['services'].append(value)
     
-    # Limit the size of lists to prevent memory issues
-    if len(device_log[ip]['dns_queries']) > 100:
-        device_log[ip]['dns_queries'] = device_log[ip]['dns_queries'][-100:]
-    
-    if len(device_log[ip]['connections']) > 100:
-        device_log[ip]['connections'] = device_log[ip]['connections'][-100:]
-    
+    # Limit list sizes using config values
+    if len(device_log[ip]['dns_queries']) > MAX_DNS_QUERIES_PER_DEVICE:
+        device_log[ip]['dns_queries'] = device_log[ip]['dns_queries'][-MAX_DNS_QUERIES_PER_DEVICE:]
+
+    if len(device_log[ip]['connections']) > MAX_CONNECTIONS_PER_DEVICE:
+        device_log[ip]['connections'] = device_log[ip]['connections'][-MAX_CONNECTIONS_PER_DEVICE:]
+
     if len(device_log[ip]['services']) > 50:
         device_log[ip]['services'] = device_log[ip]['services'][-50:]
 
@@ -114,6 +124,24 @@ def get_network_statistics():
     }
     
     return statistics
+
+def purge_stale_devices():
+    """Remove devices not seen within DEVICE_STALE_HOURS."""
+    cutoff = datetime.now() - timedelta(hours=DEVICE_STALE_HOURS)
+    stale = [
+        ip for ip, data in list(device_log.items())
+        if _parse_last_seen(data.get('last_seen', '')) < cutoff
+    ]
+    for ip in stale:
+        del device_log[ip]
+    if stale:
+        print(f"[Tracker] Purged {len(stale)} stale device(s).")
+
+def _parse_last_seen(value: str) -> datetime:
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return datetime.min
 
 def print_summary():
     
