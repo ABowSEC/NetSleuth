@@ -39,28 +39,40 @@ class TrafficAnomalyModel:
         if not os.path.exists(path):
             print(f"[ML] No model found at {path}, running without ML.")
             return cls(model=None, threshold=threshold)
-        model = joblib.load(path)
-        print(f"[ML] Loaded anomaly model from {path}")
+        payload = joblib.load(path)
+        # Support both old format (bare model) and new format (dict with threshold)
+        if isinstance(payload, dict):
+            model = payload["model"]
+            threshold = payload.get("threshold", threshold)
+        else:
+            model = payload
+        print(f"[ML] Loaded anomaly model from {path} (threshold={threshold:.4f})")
         return cls(model=model, threshold=threshold)
 
     def save(self, path: str = MODEL_PATH) -> None:
         if self.model is None:
             raise RuntimeError("No model to save")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        joblib.dump(self.model, path)
-        print(f"[ML] Saved model to {path}")
+        joblib.dump({"model": self.model, "threshold": self.threshold}, path)
+        print(f"[ML] Saved model to {path} (threshold={self.threshold:.4f})")
 
-    def fit(self, X: np.ndarray) -> None:
+    def fit(self, X: np.ndarray, contamination: float = 0.05) -> None:
         """
         Train an unsupervised IsolationForest on 'normal' traffic.
         X: shape (n_samples, n_features)
+        contamination: assumed fraction of anomalies in training data (used to calibrate threshold)
         """
         self.model = IsolationForest(
             n_estimators=200,
-            contamination="auto",
+            contamination=contamination,
             random_state=42,
         )
         self.model.fit(X)
+        # Calibrate threshold from training scores so exactly `contamination` fraction
+        # of training samples fall below it — avoids hardcoded magic constants
+        scores = self.model.score_samples(X)
+        self.threshold = float(np.percentile(scores, contamination * 100))
+        print(f"[ML] Threshold calibrated to {self.threshold:.4f} ({contamination*100:.0f}th percentile of training scores)")
 
     def predict_one(self, x: List[float]) -> Optional[AnomalyResult]:
         if self.model is None:
