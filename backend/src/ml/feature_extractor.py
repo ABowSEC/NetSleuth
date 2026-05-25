@@ -1,8 +1,9 @@
 # feature_extractor.py
+import math
 import time
 from collections import OrderedDict
 from scapy.layers.inet import IP, TCP, UDP, ICMP
-from scapy.packet import Packet
+from scapy.packet import Packet, Raw
 
 try:
     from config import ML_LAST_SEEN_MAX
@@ -20,10 +21,26 @@ FEATURE_NAMES = [
     "dst_port",
     "tcp_flags",
     "ttl",
-    "entropy_like",
+    "byte_entropy",
     "inter_arrival",
     "is_broadcast"
 ]
+
+
+def _byte_entropy(data: bytes) -> float:
+    """Shannon entropy of a byte sequence, range [0, 8]."""
+    if not data:
+        return 0.0
+    freq = [0] * 256
+    for b in data:
+        freq[b] += 1
+    n = len(data)
+    h = 0.0
+    for c in freq:
+        if c:
+            p = c / n
+            h -= p * math.log2(p)
+    return h
 
 def extract_features(pkt: Packet):
     """
@@ -63,11 +80,9 @@ def extract_features(pkt: Packet):
     elif pkt.haslayer(ICMP):
         protocol = 3
 
-    #  entropy-like heuristic 
-    # For anomalies: high entropy = encrypted/random payload
-    # Normal: mDNS/SSDP have patterned payloads (low)
-    raw = bytes(pkt)[:32]
-    entropy_like = sum(raw) / (1 + len(raw))
+    # Shannon entropy of payload (0=structured, 8=random/encrypted)
+    payload = bytes(pkt[Raw].load) if pkt.haslayer(Raw) else bytes(pkt)
+    byte_entropy = _byte_entropy(payload[:256])
 
     # inter-arrival time per IP (bounded to prevent unbounded growth)
     now = time.time()
@@ -89,7 +104,7 @@ def extract_features(pkt: Packet):
         "dst_port": dst_port,
         "tcp_flags": tcp_flags,
         "ttl": ttl,
-        "entropy_like": entropy_like,
+        "byte_entropy": byte_entropy,
         "inter_arrival": inter_arrival,
         "is_broadcast": is_broadcast
     }

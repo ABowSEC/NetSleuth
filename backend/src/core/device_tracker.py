@@ -50,17 +50,14 @@ def update_device(ip, mac, field, value):
     if field == 'dns_queries':
         if value not in device_log[ip]['dns_queries']:
             device_log[ip]['dns_queries'].append(value)
-            # Check for suspicious DNS queries
             alert_system.check_suspicious_dns(ip, device_log[ip]['dns_queries'])
-    
+            alert_system.check_data_exfiltration(ip, device_log[ip]['dns_queries'])
+
     elif field == 'connections':
         if value not in device_log[ip]['connections']:
             device_log[ip]['connections'].append(value)
             alert_system.check_high_connection_rate(ip, device_log[ip]['connections'])
-            # Check for port scanning
             alert_system.check_port_scan(ip, device_log[ip]['connections'])
-            # Check for data exfiltration
-            alert_system.check_data_exfiltration(ip, device_log[ip]['connections'])
     
     elif field == 'services':
         if value not in device_log[ip]['services']:

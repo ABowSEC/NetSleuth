@@ -132,44 +132,51 @@ class AlertSystem:
         if not self.alert_rules['port_scan']:
             return
 
-        ports = set()
+        # Group unique ports by destination IP //a scan targets many ports on one host
+        dst_ports: dict = {}
         for conn in connections:
             if ':' in conn:
                 try:
-                    ports.add(int(conn.split(':')[-1]))
+                    dst_ip, port = conn.rsplit(':', 1)
+                    dst_ports.setdefault(dst_ip, set()).add(int(port))
                 except ValueError:
                     continue
 
-        if len(ports) > ALERT_PORT_SCAN_THRESHOLD:
-            key = ('port_scan', f"{ip}:{len(ports) // 5}")
-            if key not in self._alerted:
-                self._alerted.add(key)
-                self.create_alert(
-                    'port_scan', 'HIGH',
-                    f"Potential port scan from {ip}: {len(ports)} different ports",
-                    {'ip': ip, 'port_count': len(ports)}
-                )
+        for dst_ip, ports in dst_ports.items():
+            if len(ports) > ALERT_PORT_SCAN_THRESHOLD:
+                key = ('port_scan', f"{ip}->{dst_ip}:{len(ports) // 5}")
+                if key not in self._alerted:
+                    self._alerted.add(key)
+                    self.create_alert(
+                        'port_scan', 'HIGH',
+                        f"Potential port scan from {ip} → {dst_ip}: {len(ports)} ports probed",
+                        {'ip': ip, 'dst_ip': dst_ip, 'port_count': len(ports), 'ports': sorted(ports)}
+                    )
     
-    def check_data_exfiltration(self, ip: str, connections: List[str]):
-        """Detect potential data exfiltration patterns"""
+    def check_data_exfiltration(self, ip: str, dns_queries: List[str]):
+        """Detect DNS queries to known data exfiltration services"""
         if not self.alert_rules['data_exfiltration']:
             return
-            
-        # Check for connections to known data exfiltration services
+
         exfil_indicators = [
-            'pastebin.com', 'github.com', 'gist.github.com',
+            'pastebin.com', 'gist.github.com',
             'dropbox.com', 'drive.google.com', 'mega.nz'
         ]
-        
-        for conn in connections:
+
+        for query in dns_queries:
+            query_lower = query.lower()
             for indicator in exfil_indicators:
-                if indicator in conn.lower():
-                    self.create_alert(
-                        'data_exfiltration',
-                        'CRITICAL',
-                        f"Potential data exfiltration from {ip} to {indicator}",
-                        {'ip': ip, 'destination': conn, 'indicator': indicator}
-                    )
+                if indicator in query_lower:
+                    key = ('data_exfiltration', f"{ip}:{indicator}")
+                    if key not in self._alerted:
+                        self._alerted.add(key)
+                        self.create_alert(
+                            'data_exfiltration',
+                            'CRITICAL',
+                            f"Potential data exfiltration from {ip}: DNS query to {indicator}",
+                            {'ip': ip, 'query': query, 'indicator': indicator}
+                        )
+                    break
     
     def get_alerts(self, limit: int = 100) -> List[Dict]:
         """Get recent alerts"""
