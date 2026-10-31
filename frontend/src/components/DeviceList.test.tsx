@@ -1,44 +1,60 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { DeviceList } from "./DeviceList";
+import { DeviceRows, NewcomerList } from "./DeviceList";
+import { identifyHint } from "./DeviceDrawer";
 import type { Device } from "@/lib/types";
 
 afterEach(cleanup);
 
 const device = (mac: string, partial: Partial<Device>): Device => ({
   mac, name: null, hostname: null, vendor: null, type: "unknown", is_known: false, online: false,
-  ips: [], first_seen: "", last_seen: "2026-10-30T10:00:00Z", notes: null, ...partial,
+  ips: [], first_seen: "2026-10-30T09:00:00Z", last_seen: "2026-10-30T10:00:00Z", notes: null, ...partial,
 });
 
-const devices = [
-  device("aa", { name: "Kitchen speaker", type: "speaker", is_known: true, online: true, ips: ["192.168.1.5"] }),
-  device("bb", { vendor: "Roku, Inc", type: "tv" }),
-];
+const speaker = device("aa", { name: "Kitchen speaker", type: "speaker", is_known: true, online: true, ips: ["192.168.1.5"] });
+const printer = device("cc", { name: "Office printer", type: "printer", is_known: true });
+const roku = device("bb", { vendor: "Roku, Inc", type: "tv", online: true, ips: ["192.168.1.30"] });
 
-it("renders names, review badge and status", () => {
-  render(<DeviceList devices={devices} busy={new Set()} onOpen={() => {}} onApprove={() => {}} />);
-  expect(screen.getByText("Kitchen speaker")).toBeTruthy();
-  expect(screen.getByText("Roku device")).toBeTruthy();
-  expect(screen.getAllByText("New")).toHaveLength(1);
-  expect(screen.getByText("Online")).toBeTruthy();
-});
-
-it("opens a device and approves unknown ones", () => {
+it("known rows show the IP when here and how long ago they left when away", () => {
   const onOpen = vi.fn();
-  const onApprove = vi.fn();
-  render(<DeviceList devices={devices} busy={new Set()} onOpen={onOpen} onApprove={onApprove} />);
-
+  render(<DeviceRows devices={[speaker, printer]} onOpen={onOpen} />);
+  expect(screen.getByText("192.168.1.5")).toBeTruthy();
+  expect(screen.getByText(/^left /)).toBeTruthy();
   fireEvent.click(screen.getByText("Kitchen speaker"));
   expect(onOpen).toHaveBeenCalledWith("aa");
-
-  const approve = screen.getAllByRole("button", { name: "It's mine" });
-  expect(approve).toHaveLength(1);
-  fireEvent.click(approve[0]);
-  expect(onApprove).toHaveBeenCalledWith("bb");
-  expect(onOpen).toHaveBeenCalledTimes(1);
 });
 
-it("disables approve while a request is in flight", () => {
-  render(<DeviceList devices={devices} busy={new Set(["bb"])} onOpen={() => {}} onApprove={() => {}} />);
-  expect((screen.getByRole("button", { name: "It's mine" }) as HTMLButtonElement).disabled).toBe(true);
+it("newcomers can be named inline with Enter", () => {
+  const onName = vi.fn();
+  render(<NewcomerList devices={[roku]} busy={new Set()} onOpen={() => {}} onName={onName} onApprove={() => {}} />);
+
+  expect(screen.getByText("Roku device")).toBeTruthy();
+  expect(screen.getByText("here now")).toBeTruthy();
+  const input = screen.getByPlaceholderText("Name it, e.g. Living room TV");
+
+  // Blank names are not submitted.
+  fireEvent.submit(input.closest("form")!);
+  expect(onName).not.toHaveBeenCalled();
+
+  fireEvent.change(input, { target: { value: "  Bedroom Roku " } });
+  fireEvent.submit(input.closest("form")!);
+  expect(onName).toHaveBeenCalledWith("bb", "Bedroom Roku");
+});
+
+it("newcomers can be approved without a name, and are locked while saving", () => {
+  const onApprove = vi.fn();
+  const { rerender } = render(
+    <NewcomerList devices={[roku]} busy={new Set()} onOpen={() => {}} onName={() => {}} onApprove={onApprove} />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Mine, skip naming" }));
+  expect(onApprove).toHaveBeenCalledWith("bb");
+
+  rerender(<NewcomerList devices={[roku]} busy={new Set(["bb"])} onOpen={() => {}} onName={() => {}} onApprove={onApprove} />);
+  expect((screen.getByRole("button", { name: "Mine, skip naming" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("identification hints are specific to what is known about the device", () => {
+  expect(identifyHint({ mac: "02:11:22:33:44:55", vendor: null, hostname: null })).toMatch(/private Wi-Fi address/);
+  expect(identifyHint({ mac: "a8:b5:7c:00:00:03", vendor: "Roku, Inc", hostname: null })).toMatch(/made by Roku, Inc/);
+  expect(identifyHint({ mac: "d0:57:7e:00:00:02", vendor: null, hostname: null })).toMatch(/router/);
 });

@@ -38,7 +38,7 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
       toast.success(message);
       return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't save.");
+      toast.error(err instanceof Error ? err.message : "Couldn't save that change.");
       return false;
     }
   };
@@ -46,7 +46,7 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
   const forget = async () => {
     try {
       await api.forgetDevice(mac);
-      toast.success("Device forgotten. It will reappear if it's seen again.");
+      toast.success(`Forgot ${device ? displayName(device) : "the device"}. If it's still here it will come back as new.`);
       onForgotten(mac);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Couldn't forget device.");
@@ -59,7 +59,7 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
       <aside className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-border bg-surface shadow-2xl">
         <div className="flex items-start gap-3 border-b border-border px-5 py-4">
           {device && (
-            <div className={`grid size-11 shrink-0 place-items-center rounded-lg ${device.online ? "bg-accent-soft text-accent" : "bg-surface-2 text-muted"}`}>
+            <div className={`grid size-11 shrink-0 place-items-center rounded-lg bg-surface-2 ${device.online ? "text-text" : "text-muted"}`}>
               <DeviceIcon type={device.type} className="size-6" />
             </div>
           )}
@@ -70,7 +70,7 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
             {device && (
               <p className="flex items-center gap-2 text-sm text-muted">
                 <StatusDot online={device.online} />
-                {device.online ? `Online${device.ips[0] ? ` at ${device.ips[0]}` : ""}` : `Last seen ${relativeTime(device.last_seen)}`}
+                {device.online ? `Here now${device.ips[0] ? ` at ${device.ips[0]}` : ""}` : `Left ${relativeTime(device.last_seen)}`}
               </p>
             )}
           </div>
@@ -86,14 +86,12 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
           {device && (
             <>
               {!device.is_known && (
-                <div className="rounded-lg border border-warn/30 bg-warn/10 p-4">
-                  <p className="font-medium">Do you recognise this device?</p>
-                  <p className="mt-1 text-sm text-muted">
-                    Mark it as yours so it stops showing up as new. If you don&apos;t know what it is, check your router&apos;s device list or unplug things one at a time.
-                  </p>
+                <div className="rounded-lg border border-warn/40 p-4">
+                  <p className="font-medium">Not sure what this is?</p>
+                  <p className="mt-1 text-sm text-muted">{identifyHint(device)}</p>
                   <div className="mt-3 flex gap-2">
-                    <Button variant="primary" size="sm" onClick={() => save({ is_known: true }, "Marked as known.")}>
-                      Yes, it&apos;s mine
+                    <Button variant="primary" size="sm" onClick={() => save({ is_known: true }, `${displayName(device)} is marked as yours.`)}>
+                      It&apos;s mine
                     </Button>
                   </div>
                 </div>
@@ -113,25 +111,27 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
                         {device.ips[0]}
                         {device.ips.length > 1 && <span className="text-muted"> (previously {device.ips.slice(1, 4).join(", ")})</span>}
                       </span>
-                    ) : "—"}
+                    ) : <span className="text-muted">None seen yet</span>}
                   </Fact>
                   <Fact label="First seen">{dateTime(device.first_seen)}</Fact>
                   <Fact label="Last seen">{dateTime(device.last_seen)}</Fact>
                 </dl>
               </Section>
 
-              <Section title="When it's been online" hint="Last 7 days">
-                {device.presence.length ? <PresenceStrip sessions={device.presence} /> : <p className="text-sm text-muted">No sessions recorded yet.</p>}
+              <Section title="On the network this week">
+                {device.presence.length
+                  ? <PresenceStrip sessions={device.presence} />
+                  : <p className="text-sm text-muted">No time online recorded in the last 7 days.</p>}
               </Section>
 
-              <Section title="What it looks up" hint="Most frequent DNS lookups">
+              <Section title="Names it looks up" hint="DNS lookups, most frequent first">
                 <CountList
                   rows={device.top_domains.map((d) => ({ key: d.domain, label: d.domain, count: d.count }))}
-                  empty="No lookups seen. Devices using encrypted DNS won't show any."
+                  empty="No lookups seen. Devices that use encrypted DNS (common on newer phones and browsers) won't show any."
                 />
               </Section>
 
-              <Section title="Who it connects to" hint="Connections it started">
+              <Section title="Addresses it connects to" hint="Connections it opened">
                 <CountList
                   rows={device.top_destinations.map((d) => ({
                     key: `${d.address}:${d.port}`,
@@ -167,7 +167,7 @@ function EditForm({ device, onSave }: {
     setSaving(true);
     // Naming a device is a strong signal that the owner recognises it.
     const patch = { name: name.trim() || null, notes: notes.trim() || null, ...(name.trim() && !device.is_known ? { is_known: true } : {}) };
-    await onSave(patch, "Saved.");
+    await onSave(patch, patch.name ? `Saved "${patch.name}".` : "Name cleared.");
     setSaving(false);
   };
 
@@ -179,7 +179,7 @@ function EditForm({ device, onSave }: {
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={64}
-          placeholder={device.hostname ?? (device.vendor ? `e.g. ${device.vendor.split(/[ ,]/)[0]} in the kitchen` : "e.g. Living room TV")}
+          placeholder={device.hostname ?? "What you call it, e.g. Living room TV"}
           className="mt-1 h-9 w-full rounded-md border border-border bg-bg px-3 text-sm placeholder:text-muted/70"
         />
       </label>
@@ -190,7 +190,7 @@ function EditForm({ device, onSave }: {
           onChange={(e) => setNotes(e.target.value)}
           maxLength={500}
           rows={2}
-          placeholder="Where it is, who owns it…"
+          placeholder="Which room, whose it is, when you got it"
           className="mt-1 w-full rounded-md border border-border bg-bg px-3 py-2 text-sm placeholder:text-muted/70"
         />
       </label>
@@ -199,10 +199,13 @@ function EditForm({ device, onSave }: {
           <input
             type="checkbox"
             checked={device.is_known}
-            onChange={(e) => onSave({ is_known: e.target.checked }, e.target.checked ? "Marked as known." : "Marked as not reviewed.")}
+            onChange={(e) => onSave(
+              { is_known: e.target.checked },
+              e.target.checked ? "Marked as yours." : "Moved back to devices you haven't recognised.",
+            )}
             className="size-4 accent-[var(--accent)]"
           />
-          I know this device
+          This is one of mine
         </label>
         <Button type="submit" variant="primary" disabled={!dirty || saving}>
           {saving ? "Saving…" : "Save"}
@@ -221,7 +224,10 @@ function ForgetButton({ onConfirm }: { onConfirm: () => void }) {
   }, [armed]);
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted">Removes the device and all of its history. If it&apos;s still on your network it will show up again as new.</p>
+      <p className="text-sm text-muted">
+        Deletes its name, notes and history. Useful for a guest&apos;s phone or something you&apos;ve thrown out. If it
+        connects again, it comes back as a stranger.
+      </p>
       <Button variant="danger" size="sm" onClick={() => (armed ? onConfirm() : setArmed(true))}>
         {armed ? "Click again to forget" : "Forget device"}
       </Button>
@@ -268,4 +274,18 @@ function CountList({ rows, empty }: { rows: { key: string; label: string; count:
 
 function isRandomized(mac: string): boolean {
   return (parseInt(mac.slice(0, 2), 16) & 0x02) === 0x02;
+}
+
+/** Concrete next step for identifying an unknown device, based on what we know about it. */
+export function identifyHint(d: Pick<Device, "mac" | "vendor" | "hostname">): string {
+  if (isRandomized(d.mac)) {
+    return `${d.mac} is a private Wi-Fi address, which phones, tablets and some laptops use by default. `
+      + "On each phone, open the Wi-Fi network's details and compare the address shown there.";
+  }
+  if (d.vendor) {
+    return `Its network chip was made by ${d.vendor}. Look for a device from that maker, then compare `
+      + `${d.mac} with the address on its label or in its network settings.`;
+  }
+  return `The maker isn't in NetSleuth's list. Compare ${d.mac} with the label or network settings of devices around `
+    + "your home, or check the connected-devices page on your router.";
 }

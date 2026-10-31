@@ -1,20 +1,21 @@
 "use client";
 
-import { Suspense, useCallback, useMemo, useState } from "react";
+import { Fragment, Suspense, useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DeviceDrawer } from "@/components/DeviceDrawer";
-import { DeviceList } from "@/components/DeviceList";
-import { Button, Card, EmptyState, ErrorNotice } from "@/components/ui";
+import { DeviceRows, NewcomerList } from "@/components/DeviceList";
+import { Card, EmptyLine, ErrorNotice, GroupHeading } from "@/components/ui";
 import { useLive } from "@/context/LiveContext";
 import { useToast } from "@/context/ToastContext";
 import { useResource } from "@/hooks/useResource";
 import { api } from "@/lib/api";
-import { FILTERS, filterDevices, isFilter, type Filter } from "@/lib/devices";
-import type { Device } from "@/lib/types";
+import { groupDevices } from "@/lib/devices";
+import { displayName } from "@/lib/format";
+import type { Device, DevicePatch } from "@/lib/types";
 
 export default function DevicesPage() {
   return (
-    <Suspense fallback={<ListSkeleton />}>
+    <Suspense fallback={<FirstSweep />}>
       <DevicesView />
     </Suspense>
   );
@@ -25,22 +26,21 @@ function DevicesView() {
   const router = useRouter();
   const pathname = usePathname();
   const toast = useToast();
-  const { summary } = useLive();
+  const { health } = useLive();
 
   const openMac = params.get("device");
-  const filterParam = params.get("filter");
-  const filter: Filter = isFilter(filterParam) ? filterParam : "all";
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const loadDevices = useCallback((signal: AbortSignal) => api.devices({}, signal), []);
-  const { data, error, loading, reload, setData } = useResource("devices", loadDevices);
+  const { data, error, reload, setData } = useResource("devices", loadDevices);
   const devices = useMemo(() => data ?? [], [data]);
+  const groups = useMemo(() => groupDevices(devices, query), [devices, query]);
 
-  const setParam = (key: string, value: string | null) => {
+  const setDeviceParam = (mac: string | null) => {
     const next = new URLSearchParams(params.toString());
-    if (value === null) next.delete(key);
-    else next.set(key, value);
+    if (mac === null) next.delete("device");
+    else next.set("device", mac);
     const qs = next.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
@@ -49,13 +49,14 @@ function DevicesView() {
     setData((list) => list?.map((d) => (d.mac === updated.mac ? { ...d, ...updated } : d)) ?? list);
   }, [setData]);
 
-  const approve = async (mac: string) => {
+  const patch = async (mac: string, change: DevicePatch, success: (d: Device) => string) => {
     setBusy((s) => new Set(s).add(mac));
     try {
-      replaceDevice(await api.updateDevice(mac, { is_known: true }));
-      toast.success("Marked as known.");
+      const updated = await api.updateDevice(mac, change);
+      replaceDevice(updated);
+      toast.success(success(updated));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Couldn't update device.");
+      toast.error(err instanceof Error ? err.message : "Couldn't update that device.");
     } finally {
       setBusy((s) => {
         const next = new Set(s);
@@ -65,89 +66,102 @@ function DevicesView() {
     }
   };
 
-  const visible = useMemo(() => filterDevices(devices, filter, query), [devices, filter, query]);
-  const counts = {
-    online: summary?.online ?? devices.filter((d) => d.online).length,
-    review: devices.filter((d) => !d.is_known).length,
-    total: summary?.total ?? devices.length,
-  };
+  if (!data && !error) return <FirstSweep />;
+
+  const online = devices.filter((d) => d.online).length;
+  const unrecognised = devices.filter((d) => !d.is_known).length;
+  const away = devices.length - online;
+  const nothingMatches = query && !groups.unrecognised.length && !groups.here.length && !groups.away.length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Devices</h1>
-          <p className="mt-1 text-sm text-muted">
-            {loading && !data ? "Looking for devices…" : `${counts.online} online now · ${counts.total} seen in total`}
-          </p>
-        </div>
-      </div>
-
-      {counts.review > 0 && filter !== "review" && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-warn/30 bg-warn/10 px-4 py-3">
-          <span className="grid size-8 place-items-center rounded-full bg-warn/20 text-sm font-semibold text-warn">
-            {counts.review}
-          </span>
-          <p className="flex-1 text-sm">
-            <span className="font-medium">
-              {counts.review === 1 ? "1 device needs" : `${counts.review} devices need`} a look.
-            </span>{" "}
-            <span className="text-muted">Mark the ones you recognise so new arrivals stand out.</span>
-          </p>
-          <Button size="sm" onClick={() => setParam("filter", "review")}>Review</Button>
-        </div>
-      )}
+    <div className="space-y-8">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          <span className="tabular-nums">{online}</span> {online === 1 ? "device" : "devices"} on your network right now
+        </h1>
+        <p className="text-sm text-muted">
+          {[
+            unrecognised > 0 && <span className="text-warn">{unrecognised} not recognised yet</span>,
+            away > 0 && `${away} away`,
+            health?.interface && `watching ${health.interface}`,
+          ].filter(Boolean).map((part, i) => (
+            <Fragment key={i}>{i > 0 && " · "}{part}</Fragment>
+          ))}
+        </p>
+      </header>
 
       {error && <ErrorNotice message={error} onRetry={reload} />}
 
-      <Card>
-        <div className="flex flex-col gap-3 border-b border-border p-3 sm:flex-row sm:items-center">
-          <div role="tablist" aria-label="Filter devices" className="flex gap-1 overflow-x-auto">
-            {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                role="tab"
-                aria-selected={filter === f.id}
-                onClick={() => setParam("filter", f.id === "all" ? null : f.id)}
-                className={`shrink-0 rounded-md px-3 py-1.5 text-sm font-medium ${
-                  filter === f.id ? "bg-surface-2 text-text" : "text-muted hover:text-text"
-                }`}
-              >
-                {f.label}
-                {f.id === "review" && counts.review > 0 && <span className="ml-1.5 text-warn">{counts.review}</span>}
-              </button>
-            ))}
-          </div>
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, maker, IP or MAC"
-            aria-label="Search devices"
-            className="h-9 w-full rounded-md border border-border bg-bg px-3 text-sm placeholder:text-muted/70 sm:ml-auto sm:w-72"
-          />
-        </div>
+      {devices.length > 0 && (
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Find a device by name, maker, IP or MAC"
+          aria-label="Find a device"
+          className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm placeholder:text-muted/70 sm:max-w-sm"
+        />
+      )}
 
-        {loading && !data ? (
-          <ListSkeleton bare />
-        ) : visible.length ? (
-          <DeviceList devices={visible} busy={busy} onOpen={(mac) => setParam("device", mac)} onApprove={approve} />
-        ) : (
-          <EmptyState title={emptyTitle(filter, query, devices.length)}>
-            {devices.length === 0 && "NetSleuth sweeps your network every few minutes. Devices appear here as they're found."}
-          </EmptyState>
-        )}
-      </Card>
+      {devices.length === 0 && !error && (
+        <Card>
+          <EmptyLine>
+            No devices yet. NetSleuth sweeps the network a few seconds after it starts and every few minutes after that,
+            so anything switched on should appear shortly.
+          </EmptyLine>
+        </Card>
+      )}
+
+      {nothingMatches && <p className="text-sm text-muted">No device matches &quot;{query}&quot;.</p>}
+
+      {groups.unrecognised.length > 0 && (
+        <section>
+          <GroupHeading count={groups.unrecognised.length} tone="text-warn">Haven&apos;t met these yet</GroupHeading>
+          <Card className="border-warn/40">
+            <NewcomerList
+              devices={groups.unrecognised}
+              busy={busy}
+              onOpen={setDeviceParam}
+              onName={(mac, name) => patch(mac, { name, is_known: true }, () => `Saved as "${name}".`)}
+              onApprove={(mac) => patch(mac, { is_known: true }, (d) => `${displayName(d)} is marked as yours.`)}
+            />
+          </Card>
+          <p className="mt-2 text-xs text-muted">
+            Named or approved devices move into the lists below, so the next stranger stands out.
+          </p>
+        </section>
+      )}
+
+      {(groups.here.length > 0 || (!query && devices.length > 0)) && (
+        <section>
+          <GroupHeading count={groups.here.length} tone="text-ok">Home now</GroupHeading>
+          <Card>
+            {groups.here.length ? (
+              <DeviceRows devices={groups.here} onOpen={setDeviceParam} />
+            ) : (
+              <EmptyLine>None of the devices you&apos;ve recognised are online right now.</EmptyLine>
+            )}
+          </Card>
+        </section>
+      )}
+
+      {groups.away.length > 0 && (
+        <section>
+          <GroupHeading count={groups.away.length}>Away</GroupHeading>
+          <Card>
+            <DeviceRows devices={groups.away} onOpen={setDeviceParam} />
+          </Card>
+        </section>
+      )}
 
       {openMac && (
         <DeviceDrawer
           mac={openMac}
-          onClose={() => setParam("device", null)}
+          onClose={() => setDeviceParam(null)}
           onChanged={replaceDevice}
           onForgotten={(mac) => {
             setData((list) => list?.filter((d) => d.mac !== mac) ?? list);
-            setParam("device", null);
+            setDeviceParam(null);
           }}
         />
       )}
@@ -155,27 +169,10 @@ function DevicesView() {
   );
 }
 
-function emptyTitle(filter: Filter, query: string, total: number): string {
-  if (total === 0) return "No devices yet";
-  if (query) return `Nothing matches “${query}”`;
-  if (filter === "review") return "All caught up — every device is reviewed";
-  if (filter === "online") return "Nothing is online right now";
-  return "No offline devices";
-}
-
-function ListSkeleton({ bare = false }: { bare?: boolean }) {
-  const rows = (
-    <div className="divide-y divide-border" aria-hidden="true">
-      {Array.from({ length: 6 }, (_, i) => (
-        <div key={i} className="flex items-center gap-4 px-4 py-3">
-          <div className="size-10 animate-pulse rounded-lg bg-surface-2" />
-          <div className="flex-1 space-y-2">
-            <div className="h-3.5 w-40 animate-pulse rounded bg-surface-2" />
-            <div className="h-3 w-24 animate-pulse rounded bg-surface-2" />
-          </div>
-        </div>
-      ))}
-    </div>
+function FirstSweep() {
+  return (
+    <p className="py-16 text-center text-sm text-muted" role="status">
+      Asking NetSleuth what&apos;s on your network…
+    </p>
   );
-  return bare ? rows : <Card>{rows}</Card>;
 }

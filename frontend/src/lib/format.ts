@@ -33,16 +33,20 @@ const toDate = (iso: string): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
-/** "just now", "5 min ago", "3 h ago", "2 d ago" — or "—" for bad input. */
+/**
+ * Reads inside a sentence: "left 3 hours ago", "first seen just now",
+ * "left on 9/30/2026", "left at an unknown time".
+ */
 export function relativeTime(iso: string, now: number = Date.now()): string {
   const d = toDate(iso);
-  if (!d) return "—";
+  if (!d) return "at an unknown time";
   const s = Math.max(0, Math.round((now - d.getTime()) / 1000));
+  const ago = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"} ago`;
   if (s < 45) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  if (s < 86400 * 30) return `${Math.round(s / 86400)} d ago`;
-  return d.toLocaleDateString();
+  if (s < 3600) return ago(Math.max(1, Math.round(s / 60)), "minute");
+  if (s < 86400) return ago(Math.round(s / 3600), "hour");
+  if (s < 86400 * 30) return ago(Math.round(s / 86400), "day");
+  return `on ${d.toLocaleDateString()}`;
 }
 
 export function dateTime(iso: string): string {

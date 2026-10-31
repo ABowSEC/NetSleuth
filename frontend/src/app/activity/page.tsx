@@ -1,76 +1,64 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { EventItem, KIND_LABELS } from "@/components/EventItem";
-import { Card, EmptyState, ErrorNotice } from "@/components/ui";
+import { EventItem } from "@/components/EventItem";
+import { Card, EmptyLine, ErrorNotice, GroupHeading } from "@/components/ui";
 import { useResource } from "@/hooks/useResource";
 import { api } from "@/lib/api";
-import { groupByDay, isImportant } from "@/lib/events";
-import { EVENT_KINDS, type EventKind } from "@/lib/types";
+import { ACTIVITY_FILTERS, groupByDay, type ActivityFilter } from "@/lib/events";
 
-type KindFilter = EventKind | "important";
+const EMPTY: Record<ActivityFilter, string> = {
+  all: "Nothing logged yet. Arrivals, departures and anything odd show up here as they happen.",
+  attention: "Nothing needs your attention. New devices, address clashes and scans would show up here.",
+  presence: "No arrivals or departures recorded yet.",
+  security: "No security alerts. NetSleuth flags address clashes and devices probing others on your network.",
+};
 
 export default function ActivityPage() {
-  const [filter, setFilter] = useState<KindFilter | null>(null);
-  const kind = filter && filter !== "important" ? filter : undefined;
+  const [filter, setFilter] = useState<ActivityFilter>("all");
 
-  const load = useCallback((signal: AbortSignal) => api.events({ limit: 300, kind }, signal), [kind]);
-  const { data, error, loading, reload } = useResource(`events:${kind ?? "all"}`, load, 60_000);
+  const load = useCallback((signal: AbortSignal) => api.events({ limit: 500 }, signal), []);
+  const { data, error, reload } = useResource("events", load, 60_000);
 
-  const events = useMemo(
-    () => (filter === "important" ? (data ?? []).filter(isImportant) : data ?? []),
-    [data, filter],
-  );
-  const groups = useMemo(() => groupByDay(events), [events]);
-
-  const chips: { id: KindFilter | null; label: string }[] = [
-    { id: null, label: "Everything" },
-    { id: "important", label: "Needs attention" },
-    ...EVENT_KINDS.map((k) => ({ id: k, label: KIND_LABELS[k] })),
-  ];
+  const test = ACTIVITY_FILTERS.find((f) => f.id === filter)!.test;
+  const groups = useMemo(() => groupByDay((data ?? []).filter(test)), [data, test]);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
-          <p className="mt-1 text-sm text-muted">Arrivals, departures and anything that looked wrong.</p>
-        </div>
-        <a href={api.exportUrl} download className="text-sm font-medium text-accent hover:underline">
-          Export as JSON
+      <header className="flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">What happened on your network</h1>
+        <a href={api.exportUrl} download className="text-sm text-muted underline decoration-border underline-offset-2 hover:text-text">
+          Download log (JSON)
         </a>
-      </div>
+      </header>
 
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter activity">
-        {chips.map((c) => (
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-border text-sm" role="tablist" aria-label="Filter the log">
+        {ACTIVITY_FILTERS.map((f) => (
           <button
-            key={c.label}
+            key={f.id}
             type="button"
-            aria-pressed={filter === c.id}
-            onClick={() => setFilter(c.id)}
-            className={`rounded-full border px-3 py-1 text-sm ${
-              filter === c.id ? "border-accent bg-accent-soft text-accent" : "border-border text-muted hover:text-text"
+            role="tab"
+            aria-selected={filter === f.id}
+            onClick={() => setFilter(f.id)}
+            className={`-mb-px border-b-2 pb-2 ${
+              filter === f.id ? "border-text font-medium text-text" : "border-transparent text-muted hover:text-text"
             }`}
           >
-            {c.label}
+            {f.label}
           </button>
         ))}
       </div>
 
       {error && <ErrorNotice message={error} onRetry={reload} />}
 
-      {loading && !data ? (
-        <Card className="h-64 animate-pulse" aria-hidden="true" />
+      {!data && !error ? (
+        <p className="py-10 text-sm text-muted" role="status">Loading the log…</p>
       ) : groups.length === 0 ? (
-        <Card>
-          <EmptyState title="Nothing here yet">
-            {filter ? "No events match this filter." : "Events appear as devices join, leave or change."}
-          </EmptyState>
-        </Card>
+        <EmptyLine>{EMPTY[filter]}</EmptyLine>
       ) : (
         groups.map((group) => (
           <section key={group.label}>
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{group.label}</h2>
+            <GroupHeading count={group.events.length}>{group.label}</GroupHeading>
             <Card>
               <ul className="divide-y divide-border">
                 {group.events.map((e) => <EventItem key={e.id} event={e} />)}

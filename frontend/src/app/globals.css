@@ -3,35 +3,40 @@
 /* dark: follows the data-theme attribute set by ThemeProvider (and the boot script). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/*
+ * Colour carries meaning only: green = here now, amber = not recognised yet,
+ * red = something wrong, blue = informational. Everything else is ink on paper,
+ * and "accent" is the ink itself (primary buttons, focus rings).
+ */
 :root {
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --surface-2: #eef1f4;
-  --border: #dfe3e8;
-  --text: #13171c;
-  --muted: #5d6876;
-  --accent: #0f766e;
-  --accent-soft: #d5f3ef;
-  --ok: #16803c;
-  --warn: #b45309;
-  --danger: #c02626;
-  --info: #2563eb;
+  --bg: #f6f5f1;
+  --surface: #fffefb;
+  --surface-2: #eeece6;
+  --border: #e0ddd4;
+  --text: #1d1c1a;
+  --muted: #6d6961;
+  --accent: #1d1c1a;
+  --accent-soft: #eeece6;
+  --ok: #1a7f37;
+  --warn: #a85a00;
+  --danger: #c2321b;
+  --info: #2d5bc7;
   color-scheme: light;
 }
 
 [data-theme="dark"] {
-  --bg: #0c0f13;
-  --surface: #14191f;
-  --surface-2: #1b2129;
-  --border: #29313b;
-  --text: #e5e9ee;
-  --muted: #8e99a7;
-  --accent: #2dd4bf;
-  --accent-soft: #123a37;
-  --ok: #4ade80;
-  --warn: #fbbf24;
-  --danger: #f87171;
-  --info: #60a5fa;
+  --bg: #131312;
+  --surface: #1b1a18;
+  --surface-2: #252421;
+  --border: #353330;
+  --text: #edebe6;
+  --muted: #9b978e;
+  --accent: #edebe6;
+  --accent-soft: #252421;
+  --ok: #46c25d;
+  --warn: #e3a32b;
+  --danger: #f2654d;
+  --info: #7aa2f7;
   color-scheme: dark;
 }
 

@@ -1,23 +1,25 @@
 import { displayName, matchesQuery } from "./format";
 import type { Device } from "./types";
 
-export const FILTERS = [
-  { id: "all", label: "All" },
-  { id: "online", label: "Online" },
-  { id: "review", label: "Needs review" },
-  { id: "offline", label: "Offline" },
-] as const;
-export type Filter = (typeof FILTERS)[number]["id"];
+export interface DeviceGroups {
+  /** Not marked as known yet: newest arrivals first, online before offline. */
+  unrecognised: Device[];
+  /** Known and on the network now, by name. */
+  here: Device[];
+  /** Known and gone, most recently seen first. */
+  away: Device[];
+}
 
-export const isFilter = (v: string | null): v is Filter => FILTERS.some((f) => f.id === v);
+const byName = (a: Device, b: Device) => displayName(a).localeCompare(displayName(b));
+const newest = (key: "first_seen" | "last_seen") => (a: Device, b: Device) => b[key].localeCompare(a[key]);
 
-export function filterDevices(devices: Device[], filter: Filter, query: string): Device[] {
-  return devices
-    .filter((d) =>
-      (filter === "online" ? d.online : filter === "offline" ? !d.online : filter === "review" ? !d.is_known : true)
-      && matchesQuery(d, query))
-    .sort((a, b) =>
-      Number(b.online) - Number(a.online)
-      || Number(a.is_known) - Number(b.is_known)
-      || displayName(a).localeCompare(displayName(b)));
+export function groupDevices(devices: Device[], query = ""): DeviceGroups {
+  const matching = devices.filter((d) => matchesQuery(d, query));
+  return {
+    unrecognised: matching
+      .filter((d) => !d.is_known)
+      .sort((a, b) => Number(b.online) - Number(a.online) || newest("first_seen")(a, b)),
+    here: matching.filter((d) => d.is_known && d.online).sort(byName),
+    away: matching.filter((d) => d.is_known && !d.online).sort(newest("last_seen")),
+  };
 }

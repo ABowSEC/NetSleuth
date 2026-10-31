@@ -47,7 +47,7 @@ export function useResource<T>(
       })
       .catch((err: unknown) => {
         if (current.current !== controller || controller.signal.aborted) return;
-        setError(err instanceof Error ? err.message : "Something went wrong.");
+        setError(err instanceof Error ? err.message : "NetSleuth sent a response this page couldn't read.");
       })
       .finally(() => {
         if (current.current === controller) setLoading(false);

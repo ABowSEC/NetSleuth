@@ -11,12 +11,12 @@ const NAV = [
   { href: "/settings", label: "Settings" },
 ];
 
-const STATUS: Record<LiveStatus, { label: string; dot: string }> = {
-  live: { label: "Live", dot: "bg-ok" },
-  polling: { label: "Updating", dot: "bg-ok" },
-  connecting: { label: "Connecting", dot: "bg-warn animate-pulse" },
-  offline: { label: "Offline", dot: "bg-danger" },
-};
+function statusBadge(status: LiveStatus, capturing: boolean | null, iface: string | null) {
+  if (status === "offline") return { label: "Can't reach NetSleuth", dot: "bg-danger" };
+  if (status === "connecting") return { label: "Connecting", dot: "bg-warn animate-pulse" };
+  if (capturing === false) return { label: "Paused", dot: "bg-warn" };
+  return { label: iface ? `Watching ${iface}` : "Watching", dot: "bg-ok" };
+}
 
 const NEXT_THEME: Record<ThemeMode, ThemeMode> = { system: "light", light: "dark", dark: "system" };
 
@@ -52,8 +52,7 @@ function ThemeButton() {
 export function AppHeader() {
   const pathname = usePathname();
   const { status, health } = useLive();
-  const paused = health !== null && !health.capturing && status !== "offline";
-  const badge = paused ? { label: "Paused", dot: "bg-warn" } : STATUS[status];
+  const badge = statusBadge(status, health ? health.capturing : null, health?.interface ?? null);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/85 backdrop-blur">
@@ -85,10 +84,7 @@ export function AppHeader() {
         </nav>
 
         <div className="ml-auto flex items-center gap-1 sm:gap-3">
-          <span
-            className="flex items-center gap-2 text-xs font-medium text-muted"
-            title={health?.interface ? `Watching ${health.interface}` : undefined}
-          >
+          <span className="flex items-center gap-2 text-xs font-medium text-muted" title={badge.label}>
             <span className={`size-2 rounded-full ${badge.dot}`} aria-hidden="true" />
             <span className="hidden sm:inline">{badge.label}</span>
             <span className="sr-only sm:hidden">{badge.label}</span>

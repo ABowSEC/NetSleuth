@@ -17,6 +17,18 @@ const OFFLINE_OPTIONS = [300, 600, 1800, 3600];
 const SWEEP_OPTIONS = [60, 300, 900, 3600];
 const RETENTION_OPTIONS = [7, 30, 90, 365];
 
+function savedMessage(patch: Partial<Settings>): string {
+  if (patch.offline_timeout_s !== undefined) return `Devices now count as away after ${duration(patch.offline_timeout_s)} of silence.`;
+  if (patch.sweep_interval_s !== undefined) return `The network is now scanned every ${duration(patch.sweep_interval_s)}.`;
+  if (patch.retention_days !== undefined) return `History is now kept for ${duration(patch.retention_days * 86400)}.`;
+  if (patch.lan_exposure !== undefined) {
+    return patch.lan_exposure
+      ? "Saved. Restart NetSleuth, then open it from another device using this computer's IP address."
+      : "Saved. After a restart, only this computer can open the dashboard.";
+  }
+  return "Saved.";
+}
+
 export default function SettingsPage() {
   const toast = useToast();
   const load = useCallback(() => api.settings(), []);
@@ -28,7 +40,7 @@ export default function SettingsPage() {
     try {
       const saved = await api.updateSettings(patch);
       setData(() => saved);
-      toast.success("Settings saved.");
+      toast.success(savedMessage(patch));
     } catch (err) {
       setData(() => previous);
       toast.error(err instanceof Error ? err.message : "Couldn't save settings.");

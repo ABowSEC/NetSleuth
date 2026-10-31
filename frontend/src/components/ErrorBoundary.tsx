@@ -22,8 +22,10 @@ export class ErrorBoundary extends Component<{ children: React.ReactNode }, Stat
     if (!this.state.error) return this.props.children;
     return (
       <div role="alert" className="mx-auto max-w-lg px-4 py-20 text-center">
-        <p className="text-lg font-semibold">Something went wrong showing this page.</p>
-        <p className="mt-2 text-sm text-muted">{this.state.error.message}</p>
+        <p className="text-lg font-semibold">This page hit a bug and stopped drawing.</p>
+        <p className="mt-2 text-sm text-muted">
+          Monitoring isn&apos;t affected. The error was: <code className="font-mono">{this.state.error.message}</code>
+        </p>
         <button
           type="button"
           onClick={() => this.setState({ error: null })}

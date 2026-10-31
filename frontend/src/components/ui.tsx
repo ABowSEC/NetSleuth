@@ -1,11 +1,9 @@
 // Small shared primitives. Kept in one file: each is a few lines.
 
-import type { Severity } from "@/lib/types";
-
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 const BUTTON: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-white dark:text-bg hover:opacity-90",
+  primary: "bg-accent text-bg hover:opacity-85",
   secondary: "border border-border bg-surface text-text hover:bg-surface-2",
   ghost: "text-muted hover:bg-surface-2 hover:text-text",
   danger: "border border-danger/40 text-danger hover:bg-danger/10",
@@ -38,37 +36,26 @@ export function StatusDot({ online, className = "" }: { online: boolean; classNa
   );
 }
 
-const SEVERITY_STYLE: Record<Severity, string> = {
-  info: "text-muted",
-  low: "text-info",
-  medium: "text-warn",
-  high: "text-danger",
-  critical: "text-surface bg-danger",
-};
-
-export function SeverityTag({ severity }: { severity: Severity }) {
-  if (severity === "info") return null;
-  return (
-    <span
-      className={`rounded px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${SEVERITY_STYLE[severity]} ${
-        severity === "critical" ? "" : "bg-surface-2"
-      }`}
-    >
-      {severity}
-    </span>
-  );
-}
-
 export function Card({ className = "", ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div {...props} className={`rounded-xl border border-border bg-surface ${className}`} />;
+  return <div {...props} className={`rounded-lg border border-border bg-surface ${className}`} />;
 }
 
-export function EmptyState({ title, children }: { title: string; children?: React.ReactNode }) {
+/** One quiet line where a list would be. Says what will happen, not that nothing is there. */
+export function EmptyLine({ children }: { children: React.ReactNode }) {
+  return <p className="px-4 py-6 text-sm text-muted">{children}</p>;
+}
+
+/** Small uppercase heading with an optional count, used to split a list into groups. */
+export function GroupHeading({ children, count, tone = "text-muted" }: {
+  children: React.ReactNode;
+  count?: number;
+  tone?: string;
+}) {
   return (
-    <div className="px-6 py-14 text-center">
-      <p className="font-medium">{title}</p>
-      {children && <div className="mt-1 text-sm text-muted">{children}</div>}
-    </div>
+    <h2 className={`mb-2 flex items-baseline gap-2 text-xs font-semibold uppercase tracking-wider ${tone}`}>
+      {children}
+      {count !== undefined && <span className="font-mono font-normal tabular-nums">{count}</span>}
+    </h2>
   );
 }
 
