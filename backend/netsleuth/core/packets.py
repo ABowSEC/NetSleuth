@@ -24,6 +24,7 @@ from scapy.layers.dns import DNS
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.l2 import ARP, Ether
 
+from ..utils.classify import is_placeholder_name
 from ..utils.mac import normalize_mac
 
 _MDNS_PORTS = (5353, 5355)   # mDNS, LLMNR
@@ -79,6 +80,14 @@ def _text(value) -> str | None:
         return None
     value = value.strip().strip("\x00").rstrip(".")
     return value or None
+
+
+def _hostname(value) -> str | None:
+    """A device-reported name, minus placeholders like "none" or "localhost"."""
+    name = _text(value)
+    if not name or is_placeholder_name(name):
+        return None
+    return name
 
 
 def _is_unicast_destination(address: str, network: IPv4Network) -> bool:
@@ -156,7 +165,7 @@ def _parse_dhcp(pkt, network: IPv4Network) -> list[Fact]:
 
     if bootp.op == 1:  # client -> server
         facts.append(Sighting(mac, _local_ip(bootp.ciaddr, network)))
-        hostname = _text(options.get("hostname"))
+        hostname = _hostname(options.get("hostname"))
         if hostname:
             facts.append(Hostname(mac, hostname))
     elif options.get("message-type") == 5:  # server ACK: address assigned to chaddr
@@ -177,7 +186,7 @@ def _parse_mdns(dns, mac: str, src_ip: str) -> list[Fact]:
         return []
     for rr in dns.an or []:
         if getattr(rr, "type", None) == 1 and str(getattr(rr, "rdata", "")) == src_ip:
-            name = _text(rr.rrname)
+            name = _hostname(rr.rrname)
             if name:
                 return [Hostname(mac, name.removesuffix(".local"))]
     return []

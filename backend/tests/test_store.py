@@ -224,3 +224,17 @@ def test_legacy_import_tolerates_missing_and_corrupt(store, tmp_path):
 
 def test_schema_version_constant_matches_migrations():
     assert max(store_mod._MIGRATIONS) == store_mod.SCHEMA_VERSION
+
+
+def test_placeholder_hostname_cleared_and_type_reclassified_on_load(store, db_path):
+    store.observe("d4:ad:fc:00:00:04")
+    store.flush()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE devices SET hostname = 'none', type = 'computer'")
+    reloaded = reopen(store, db_path)
+    try:
+        device = reloaded.get("d4:ad:fc:00:00:04")
+        assert device.hostname is None
+        assert device.type == "iot"   # Intellirocks re-classified with the fixed rules
+    finally:
+        reloaded.close()

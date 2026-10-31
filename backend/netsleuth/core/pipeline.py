@@ -31,6 +31,9 @@ class PipelineObserver:
 
     def on_offline(self, devices: list[Device]) -> None: ...
 
+    def on_tick(self) -> None:
+        """Called on every housekeeping pass (~30 s)."""
+
     def on_flow(self, flow: Flow) -> None: ...
 
 
@@ -143,6 +146,7 @@ class Pipeline:
         gone = self.store.expire(self._offline_timeout_s())
         if gone:
             self.observer.on_offline(gone)
+        self.observer.on_tick()
 
     def _housekeep(self) -> None:
         last_prune = time.monotonic()

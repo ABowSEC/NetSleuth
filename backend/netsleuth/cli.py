@@ -137,7 +137,7 @@ def run(args, settings: Settings, host: str, info) -> int:
     store = DeviceStore(db_path())
     import_legacy(store)
     store.start()
-    engine = EventEngine(store, gateway)
+    engine = EventEngine(store, gateway, first_run=not store.list_events(limit=1))
     pipeline = Pipeline(
         store, info.network, gateway, engine,
         offline_timeout_s=lambda: settings.offline_timeout_s,

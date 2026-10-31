@@ -116,3 +116,10 @@ def test_udp_flow_skips_broadcast_and_multicast():
 def test_multicast_source_mac_is_ignored():
     pkt = Ether(src="01:00:5e:00:00:01", dst=LAPTOP) / IP(src="10.0.0.9", dst="10.0.0.5") / UDP()
     assert parse(wire(pkt), NET) == []
+
+
+def test_dhcp_placeholder_hostname_is_ignored():
+    pkt = (eth(PHONE, "ff:ff:ff:ff:ff:ff") / IP(src="0.0.0.0", dst="255.255.255.255")
+           / UDP(sport=68, dport=67) / BOOTP(op=1, chaddr=bytes.fromhex("021122334455"))
+           / DHCP(options=[("message-type", "request"), ("hostname", b"none"), "end"]))
+    assert parse(wire(pkt), NET) == [Sighting(PHONE, None)]

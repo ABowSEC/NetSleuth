@@ -13,6 +13,14 @@ DEVICE_TYPES = (
     "camera", "printer", "console", "iot", "unknown",
 )
 
+PLACEHOLDER_NAMES = {"none", "(none)", "null", "unknown", "localhost", "localhost.localdomain", "*", "-"}
+
+
+def is_placeholder_name(name: str) -> bool:
+    """Names some devices report instead of a real hostname."""
+    return name.strip().lower() in PLACEHOLDER_NAMES
+
+
 # (type, pattern) — first match wins. Patterns are applied to lowercase text.
 _HOSTNAME_RULES: list[tuple[str, str]] = [
     ("phone", r"iphone|android|galaxy|pixel|\bphone\b|oneplus|moto"),
@@ -33,8 +41,8 @@ _VENDOR_RULES: list[tuple[str, str]] = [
     ("camera", r"\bring\b|wyze|arlo|hikvision|dahua|reolink"),
     ("printer", r"seiko epson|brother industries|canon"),
     ("console", r"nintendo|sony interactive"),
-    ("computer", r"intel|dell|lenovo|asustek|micro-star|gigabyte|raspberry pi|microsoft"),
-    ("iot", r"espressif|tuya|shelly|ecobee|nest labs|signify|philips lighting|amazon technologies|belkin|tp-link"),
+    ("computer", r"\bintel\b|dell|lenovo|asustek|micro-star|gigabyte|raspberry pi|microsoft"),
+    ("iot", r"intellirocks|ai-link|espressif|tuya|shelly|ecobee|nest labs|signify|philips lighting|amazon technologies|belkin|tp-link"),
 ]
 
 

@@ -1,6 +1,6 @@
 import pytest
 
-from netsleuth.utils.classify import DEVICE_TYPES, classify
+from netsleuth.utils.classify import DEVICE_TYPES, classify, is_placeholder_name
 from netsleuth.utils.mac import is_randomized, normalize_mac, vendor_for
 
 
@@ -52,3 +52,21 @@ def test_gateway_is_always_router():
 
 def test_classify_only_returns_known_types():
     assert classify("xbox", None) in DEVICE_TYPES
+
+
+@pytest.mark.parametrize("vendor, expected", [
+    ("Shenzhen Intellirocks Tech. Co. Ltd.", "iot"),     # Govee, not Intel
+    ("Intel Corporate", "computer"),
+    ("Sichuan AI-Link Technology Co., Ltd.", "iot"),
+])
+def test_vendor_word_matching(vendor, expected):
+    assert classify(None, vendor) == expected
+
+
+@pytest.mark.parametrize("name", ["none", "None", " localhost ", "(none)", "*"])
+def test_placeholder_names(name):
+    assert is_placeholder_name(name)
+
+
+def test_real_name_is_not_placeholder():
+    assert not is_placeholder_name("YN00AB123456")

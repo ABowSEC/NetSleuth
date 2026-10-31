@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..timeutil import iso, parse_iso, utcnow
-from ..utils.classify import classify
+from ..utils.classify import classify, is_placeholder_name
 from ..utils.mac import vendor_for
 
 log = logging.getLogger(__name__)
@@ -203,10 +203,14 @@ class DeviceStore:
                 "WHERE end IS NULL"
             )
             for row in self._conn.execute("SELECT * FROM devices"):
+                hostname = row["hostname"]
+                if hostname and is_placeholder_name(hostname):
+                    hostname = None
                 self._devices[row["mac"]] = Device(
                     mac=row["mac"], first_seen=row["first_seen"], last_seen=row["last_seen"],
-                    name=row["name"], hostname=row["hostname"], vendor=row["vendor"],
-                    type=row["type"], is_known=bool(row["is_known"]), notes=row["notes"],
+                    name=row["name"], hostname=hostname, vendor=row["vendor"],
+                    type=classify(hostname, row["vendor"]) if row["type"] != "router" else "router",
+                    is_known=bool(row["is_known"]), notes=row["notes"],
                 )
             for row in self._conn.execute("SELECT mac, ip FROM device_ips ORDER BY last_seen"):
                 device = self._devices.get(row["mac"])

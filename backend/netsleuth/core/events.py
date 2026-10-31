@@ -5,7 +5,9 @@ mac_conflict, alert. Each emitted event is stored and then published to
 subscribers (the live stream).
 
 Rules
-- new_device: first sighting of a MAC that isn't known.
+- new_device: first sighting of a MAC that isn't known. On the very first
+  run (empty event history) every device is new, so devices found during the
+  start-up grace period are summarised in one event instead.
 - joined / left: presence changes. ``joined`` is suppressed for a short grace
   period after start-up, when every device "comes online" at once.
 - A device back after ``RETURNING_AFTER_DAYS`` gets a low-severity joined.
@@ -50,9 +52,12 @@ def label(device: Device | None, fallback: str) -> str:
 
 class EventEngine(PipelineObserver):
     def __init__(self, store: DeviceStore, gateway_ip: str | None = None,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, first_run: bool = False):
         self.store = store
         self.gateway_ip = gateway_ip
+        self.first_run = first_run
+        self._baseline: set[str] = set()
+        self._baseline_reported = not first_run
         self._clock = clock
         self._started = clock()
         self._lock = threading.Lock()
@@ -106,7 +111,12 @@ class EventEngine(PipelineObserver):
         where = f" at {ip}" if ip else ""
 
         if obs.is_new:
-            if not (device and device.is_known):
+            if device and device.is_known:
+                pass
+            elif self.first_run and self.in_grace:
+                with self._lock:
+                    self._baseline.add(mac)
+            else:
                 self.emit("new_device", "medium", f"New device on your network: {name}{where}", mac=mac, ip=ip)
         elif obs.came_online:
             away = self._days_away(obs.previous_last_seen)
@@ -121,6 +131,18 @@ class EventEngine(PipelineObserver):
 
         if obs.ip_taken_from and ip:
             self._check_conflict(mac, ip, obs.ip_taken_from, name)
+
+    def on_tick(self) -> None:
+        if self._baseline_reported or self.in_grace:
+            return
+        self._baseline_reported = True
+        with self._lock:
+            found = len(self._baseline)
+        if found:
+            self.emit("new_device", "info",
+                      f"First scan found {found} device{'s' if found != 1 else ''}. "
+                      "Review them and mark the ones you recognise as known.",
+                      baseline=True, count=found)
 
     def on_offline(self, devices: list[Device]) -> None:
         for device in devices:

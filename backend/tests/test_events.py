@@ -161,3 +161,25 @@ def test_failing_subscriber_does_not_break_emit(engine, store):
     engine.subscribe(lambda e: 1 / 0)
     engine.emit("alert", "low", "still stored")
     assert store.list_events()[0]["message"] == "still stored"
+
+
+def test_first_run_summarises_instead_of_announcing_each_device(store, clock):
+    engine = EventEngine(store, gateway_ip="10.0.0.1", clock=clock, first_run=True)
+    pipeline = Pipeline(store, NET, gateway_ip="10.0.0.1", observer=engine)
+    store.import_known(LAPTOP, "Zenbook")
+    pipeline.apply([Sighting(ROUTER, None), Sighting(PHONE, "10.0.0.6"), Sighting(LAPTOP, "10.0.0.5")])
+    pipeline.housekeeping()
+    assert store.list_events() == []   # still in grace
+
+    after_grace(clock)
+    pipeline.housekeeping()
+    pipeline.housekeeping()
+    events = store.list_events()
+    assert len(events) == 1
+    assert events[0]["data"] == {"baseline": True, "count": 2}
+    assert events[0]["message"].startswith("First scan found 2 devices")
+
+    # Devices that appear after the baseline are announced normally.
+    pipeline.apply([Sighting(INTRUDER, "10.0.0.66")])
+    assert store.list_events()[0]["kind"] == "new_device"
+    assert store.list_events()[0]["mac"] == INTRUDER
