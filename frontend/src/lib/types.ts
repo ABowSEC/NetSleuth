@@ -10,7 +10,10 @@ export interface Device {
   dns_queries: string[]
   connections: string[]
   services: string[]
+  first_seen: string
   last_seen: string
+  is_known: boolean
+  friendly_name: string
   connection_count: number
   dns_count: number
 }
@@ -26,6 +29,7 @@ export interface NetworkData {
   devices: Record<string, Device>
   last_update: string | null
   total_devices: number
+  unknown_devices: number
   total_connections: number
   total_dns_queries: number
   alerts: Alert[]

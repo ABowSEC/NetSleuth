@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from ..core.device_tracker import device_log, purge_stale_devices
 from ..core.alert_system import alert_system
 from ..core.suspicious_devices import suspicious_tracker
+from ..core.known_registry import claim, unclaim, is_known, get_name
 
 import threading
 import time
@@ -38,21 +39,27 @@ def update_network_data():
     
     for ip, data in device_log.items():
         devices[ip] = {
-            'hostname': data.get('hostname', 'Unknown'),
-            'mac': data.get('mac', 'Unknown'),
-            'dns_queries': data.get('dns_queries', []),
-            'connections': data.get('connections', []),
-            'services': data.get('services', []),
-            'last_seen': data.get('last_seen', 'Unknown'),
+            'hostname':      data.get('hostname', 'Unknown'),
+            'mac':           data.get('mac', 'Unknown'),
+            'dns_queries':   data.get('dns_queries', []),
+            'connections':   data.get('connections', []),
+            'services':      data.get('services', []),
+            'first_seen':    data.get('first_seen', 'Unknown'),
+            'last_seen':     data.get('last_seen', 'Unknown'),
+            'is_known':      data.get('is_known', False),
+            'friendly_name': data.get('friendly_name', ''),
             'connection_count': len(data.get('connections', [])),
-            'dns_count': len(data.get('dns_queries', []))
+            'dns_count':        len(data.get('dns_queries', [])),
         }
         total_connections += len(data.get('connections', []))
         total_dns_queries += len(data.get('dns_queries', []))
     
+    unknown_count = sum(1 for d in devices.values() if not d['is_known'])
+
     network_data['devices'] = devices
     network_data['last_update'] = datetime.now().strftime("%H:%M:%S")
     network_data['total_devices'] = len(devices)
+    network_data['unknown_devices'] = unknown_count
     network_data['total_connections'] = total_connections
     network_data['total_dns_queries'] = total_dns_queries
     network_data['alerts'] = alert_system.get_alerts(ALERTS_PANEL_LIMIT)
@@ -128,6 +135,32 @@ def export_alerts():
     filename = request.args.get('filename')
     alert_system.export_alerts(filename)
     return jsonify({'status': 'success', 'message': 'Alerts exported'})
+
+@app.route('/api/devices/<ip>/claim', methods=['POST'])
+def claim_device(ip):
+    """Name a device and mark it as known."""
+    body = request.get_json() or {}
+    name = (body.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name is required'}), 400
+    mac = device_log.get(ip, {}).get('mac')
+    claim(mac, ip, name)
+    if ip in device_log:
+        device_log[ip]['is_known'] = True
+        device_log[ip]['friendly_name'] = name
+    return jsonify({'status': 'success', 'name': name})
+
+
+@app.route('/api/devices/<ip>/unclaim', methods=['POST'])
+def unclaim_device(ip):
+    """Remove a device from the known registry."""
+    mac = device_log.get(ip, {}).get('mac')
+    unclaim(mac, ip)
+    if ip in device_log:
+        device_log[ip]['is_known'] = False
+        device_log[ip]['friendly_name'] = ''
+    return jsonify({'status': 'success'})
+
 
 @app.route('/api/clear-data', methods=['POST'])
 def clear_data():

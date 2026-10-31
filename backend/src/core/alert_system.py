@@ -3,6 +3,9 @@ import json
 from datetime import datetime
 from typing import Dict, List, Callable, Set, Tuple
 from ..utils.device_mapper import get_hostname
+from ..utils.network_utils import get_gateway_ips
+
+_GATEWAY_IPS = get_gateway_ips()
 
 try:
     from config import (
@@ -130,6 +133,8 @@ class AlertSystem:
     def check_port_scan(self, ip: str, connections: List[str]):
         """Detect potential port scanning activity"""
         if not self.alert_rules['port_scan']:
+            return
+        if ip in _GATEWAY_IPS:
             return
 
         # Group unique ports by destination IP //a scan targets many ports on one host

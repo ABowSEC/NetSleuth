@@ -11,3 +11,7 @@
 *.ico   binary
 *.pcap  binary
 *.db    binary
+
+# Windows batch files must keep CRLF
+*.bat   text eol=crlf
+*.cmd   text eol=crlf

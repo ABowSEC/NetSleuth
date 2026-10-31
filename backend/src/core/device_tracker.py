@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta
 from ..utils.device_mapper import get_hostname
 from .alert_system import alert_system
+from .persistence import load_devices, save_device
+from .known_registry import is_known, get_name
 
 try:
     from config import (
@@ -14,8 +16,8 @@ except ImportError:
     MAX_DNS_QUERIES_PER_DEVICE = 50
     DEVICE_STALE_HOURS = 24
 
-# Global device activity log
-device_log = {}
+# Global device activity log — pre-populated from persistent storage
+device_log = load_devices()
 
 def update_device(ip, mac, field, value):
     """Update device log with new activity."""
@@ -23,17 +25,22 @@ def update_device(ip, mac, field, value):
 
     # Initialize device entry if not exists
     if ip not in device_log:
+        known = is_known(mac)
         device_log[ip] = {
-            'hostname': get_hostname(ip=ip, mac=mac),
-            'mac': mac or 'Unknown',
-            'dns_queries': [],
-            'connections': [],
-            'services': [],
-            'last_seen': now
+            'hostname':      get_hostname(ip=ip, mac=mac),
+            'mac':           mac or 'Unknown',
+            'dns_queries':   [],
+            'connections':   [],
+            'services':      [],
+            'first_seen':    now,
+            'last_seen':     now,
+            'is_known':      known,
+            'friendly_name': get_name(mac) or '',
         }
 
-        # Check for new device alert
-        alert_system.check_new_device(ip, mac, device_log)
+        # Only alert for genuinely unknown devices
+        if not known:
+            alert_system.check_new_device(ip, mac, device_log)
 
     # Update last seen time
     device_log[ip]['last_seen'] = now
@@ -72,6 +79,8 @@ def update_device(ip, mac, field, value):
 
     if len(device_log[ip]['services']) > 50:
         device_log[ip]['services'] = device_log[ip]['services'][-50:]
+
+    save_device(ip, device_log[ip])
 
 def get_device_summary():
     """Get a summary of all devices."""
