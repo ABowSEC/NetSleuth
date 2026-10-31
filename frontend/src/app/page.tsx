@@ -1,44 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useNetworkData }  from "../hooks/useNetworkData"
-import { useSuspicious }   from "../hooks/useSuspicious"
-import { useAnomalies }    from "../hooks/useAnomalies"
+import { useNetworkData }   from "../hooks/useNetworkData"
 import { useNotifications } from "../hooks/useNotifications"
-import { StatsCard }       from "../components/StatsCard"
-import { ControlPanel }    from "../components/ControlPanel"
-import { DeviceTable }     from "../components/DeviceTable"
-import { AlertPanel }      from "../components/AlertPanel"
-import { SuspiciousPanel } from "../components/SuspiciousPanel"
-import { AnomalyPanel }    from "../components/AnomalyPanel"
-import { ThemeToggle }     from "../components/ui/ThemeToggle"
-import { ErrorBanner }     from "../components/ui/ErrorBanner"
+import { StatsCard }        from "../components/StatsCard"
+import { ControlPanel }     from "../components/ControlPanel"
+import { DeviceTable }      from "../components/DeviceTable"
+import { AlertPanel }       from "../components/AlertPanel"
+import { ThemeToggle }      from "../components/ui/ThemeToggle"
+import { ErrorBanner }      from "../components/ui/ErrorBanner"
 import { SkeletonCard, SkeletonTable } from "../components/ui/SkeletonCard"
 import type { Filter } from "../lib/types"
 
-function getLabels(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem("netsleuth_labels") || "{}") }
-  catch { return {} }
-}
-
 export default function Dashboard() {
   const { data, isLoading, error, history, refetch } = useNetworkData()
-  const { suspicious } = useSuspicious()
-  const { anomalies }  = useAnomalies()
   const { permission, requestPermission } = useNotifications()
 
-  const [search, setSearch]         = useState("")
-  const [activeFilter, setFilter]   = useState<Filter>("all")
-  const [labels, setLabels]         = useState<Record<string, string>>({})
-
-  useEffect(() => { setLabels(getLabels()) }, [])
-
-  const saveLabel = (ip: string, label: string) => {
-    const next = { ...labels }
-    if (label) next[ip] = label; else delete next[ip]
-    setLabels(next)
-    localStorage.setItem("netsleuth_labels", JSON.stringify(next))
-  }
+  const [search, setSearch]       = useState("")
+  const [activeFilter, setFilter] = useState<Filter>("all")
 
   const exportData = () => {
     if (!data) return
@@ -47,10 +26,8 @@ export default function Dashboard() {
     const a    = document.createElement("a")
     a.href     = url
     a.download = `netsleuth_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    document.body.appendChild(a); a.click()
+    document.body.removeChild(a); URL.revokeObjectURL(url)
   }
 
   const clearData = async () => {
@@ -64,12 +41,14 @@ export default function Dashboard() {
     refetch()
   }
 
+  const unknownCount = data?.unknown_devices ?? 0
+
   const stats = [
-    { label: "Devices",     value: data?.total_devices     ?? "--", key: "devices" as const,     accent: "#6366f1" },
-    { label: "Connections", value: data?.total_connections  ?? "--", key: "connections" as const, accent: "#8b5cf6" },
-    { label: "DNS Queries", value: data?.total_dns_queries  ?? "--", key: "dns" as const,         accent: "#a855f7" },
-    { label: "Alerts",      value: (data?.alerts ?? []).length,      key: "alerts" as const,      accent: "#ef4444" },
-    { label: "Last Update", value: data?.last_update        ?? "--:--", key: null,                accent: "#6366f1" },
+    { label: "Devices",     value: data?.total_devices    ?? "--", key: "devices" as const,     accent: "#6366f1" },
+    { label: "Unknown",     value: unknownCount,                   key: null,                   accent: unknownCount > 0 ? "#f97316" : "#22c55e" },
+    { label: "Connections", value: data?.total_connections ?? "--", key: "connections" as const, accent: "#8b5cf6" },
+    { label: "DNS Queries", value: data?.total_dns_queries ?? "--", key: "dns" as const,         accent: "#a855f7" },
+    { label: "Last Update", value: data?.last_update       ?? "--:--", key: null,               accent: "#6366f1" },
   ]
 
   return (
@@ -78,7 +57,7 @@ export default function Dashboard() {
       {/* Header */}
       <div className="text-center mb-4 relative">
         <h1 className="text-3xl font-bold text-white tracking-tight">NetSleuth</h1>
-        <p className="text-indigo-200 text-sm mt-1">Real-time Network Monitoring</p>
+        <p className="text-indigo-200 text-sm mt-1">Home Network Monitor</p>
         <div className="absolute right-0 top-0 flex items-center gap-2">
           {permission === "default" && (
             <button
@@ -92,8 +71,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Error banner */}
       {error && <ErrorBanner message={error} onRetry={refetch} />}
+
+      {/* Unknown device banner */}
+      {unknownCount > 0 && (
+        <div className="mb-4 px-4 py-3 rounded-xl bg-orange-500/90 text-white flex items-center gap-3 shadow">
+          <span className="text-xl">⚠</span>
+          <span className="font-semibold">
+            {unknownCount} unknown device{unknownCount !== 1 ? "s" : ""} on your network
+          </span>
+          <span className="text-orange-100 text-sm">— scroll down to name them</span>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-5 gap-3 mb-4">
@@ -124,7 +113,6 @@ export default function Dashboard() {
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
 
-        {/* Device table */}
         {isLoading && !data ? (
           <SkeletonTable />
         ) : (
@@ -132,22 +120,12 @@ export default function Dashboard() {
             devices={data?.devices ?? {}}
             search={search}
             activeFilter={activeFilter}
-            labels={labels}
-            onSaveLabel={saveLabel}
+            onDeviceClaimed={refetch}
           />
         )}
 
-        {/* Right sidebar */}
-        <div>
-          <AlertPanel alerts={data?.alerts ?? []} onClear={clearAlerts} />
-          <SuspiciousPanel devices={suspicious} />
-        </div>
+        <AlertPanel alerts={data?.alerts ?? []} onClear={clearAlerts} />
 
-      </div>
-
-      {/* Anomaly panel — full width below */}
-      <div className="mt-4">
-        <AnomalyPanel anomalies={anomalies} />
       </div>
 
       <p className="text-center text-indigo-200 text-xs mt-4">

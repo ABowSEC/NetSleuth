@@ -7,8 +7,8 @@ import csv
 
 import numpy as np
 
-from src.ml.feature_extractor import FEATURE_NAMES
-from src.ml.model_manager import TrafficAnomalyModel
+from netsleuth.ml.feature_extractor import FEATURE_NAMES
+from netsleuth.ml.model_manager import TrafficAnomalyModel
 
 
 DATA_PATH = os.path.abspath(os.path.join(ROOT, "data", "training_packets.csv"))

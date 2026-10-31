@@ -7,7 +7,7 @@ import csv
 import time
 from datetime import datetime
 from scapy.all import sniff, IP, TCP, UDP
-from src.ml.feature_extractor import extract_features, FEATURE_NAMES
+from netsleuth.ml.feature_extractor import extract_features, FEATURE_NAMES
 
 
 

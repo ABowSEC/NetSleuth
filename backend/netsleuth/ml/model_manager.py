@@ -11,10 +11,7 @@ import numpy as np
 from sklearn.ensemble import IsolationForest
 
 
-try:
-    from config import ML_ANOMALY_THRESHOLD
-except ImportError:
-    ML_ANOMALY_THRESHOLD = -0.2
+from ..constants import ML_ANOMALY_THRESHOLD
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "models", "isoforest.pkl")
 
