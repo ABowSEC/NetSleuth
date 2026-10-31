@@ -148,6 +148,7 @@ def run(args, settings: Settings, host: str, info) -> int:
     from .core.capture import CaptureError, CapturePermissionError, run_capture
     from .core.discovery import Discovery
     from .core.events import EventEngine
+    from .core.identify_mode import IdentifySession
     from .core.legacy import import_legacy
     from .core.pipeline import Pipeline
     from .core.store import DeviceStore
@@ -170,11 +171,15 @@ def run(args, settings: Settings, host: str, info) -> int:
         retention_days=lambda: settings.retention_days,
     )
     discovery = Discovery(pipeline, info.name, info.ip, lambda: settings.sweep_interval_s)
+    identify = IdentifySession(
+        store, engine, info.network, info.ip, own_mac=info.mac, gateway_ip=gateway,
+        port_check_enabled=lambda: settings.port_check, is_paused=lambda: pipeline.paused,
+    )
 
     static_dir = default_static_dir()
     app = create_app(AppContext(
         store=store, engine=engine, settings=settings, pipeline=pipeline,
-        interface=info.name, dev=args.dev, static_dir=static_dir,
+        interface=info.name, dev=args.dev, static_dir=static_dir, identify=identify,
     ))
     server = Server(app, host, args.port)
 
@@ -207,6 +212,7 @@ def run(args, settings: Settings, host: str, info) -> int:
         code = EXIT_ERROR
     finally:
         log.info("Shutting down.")
+        identify.stop(wait=5)
         discovery.stop()
         pipeline.stop()
         server.close()

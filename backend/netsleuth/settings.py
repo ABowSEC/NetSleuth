@@ -52,6 +52,7 @@ _BOUNDS = {
     "offline_timeout_s": (60, 86_400),
     "sweep_interval_s": (30, 86_400),
     "retention_days": (1, 3_650),
+    "identify_minutes": (5, 30),
 }
 
 
@@ -62,6 +63,8 @@ class Settings:
     retention_days: int = 30         # events / traffic counts older than this are pruned
     lan_exposure: bool = False       # bind dashboard to 0.0.0.0 (takes effect on restart)
     anomaly_plugin: bool = False     # optional ML anomaly detection
+    port_check: bool = False         # Identify mode may also check 13 common ports per device
+    identify_minutes: int = 10       # how long an Identify run may take before it switches off
 
     def update(self, changes: dict) -> None:
         """Validate and apply a partial update. Raises ValueError on bad input."""

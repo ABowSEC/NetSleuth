@@ -67,7 +67,7 @@ interface DeviceDetail extends Device {
   suggestion: { name: string | null; model: string | null; os: string | null; type: DeviceType } | null;
 }
 
-type EventKind = "joined" | "left" | "new_device" | "ip_changed" | "mac_conflict" | "alert";
+type EventKind = "joined" | "left" | "new_device" | "ip_changed" | "mac_conflict" | "alert" | "identified";
 type Severity = "info" | "low" | "medium" | "high" | "critical";
 
 interface Event {
@@ -101,6 +101,19 @@ interface Settings {
   retention_days: number;      // default 30; events + counts
   lan_exposure: boolean;       // default false; takes effect on restart
   anomaly_plugin: boolean;     // default false
+  port_check: boolean;         // default false; Identify mode also checks 13 common TCP ports per device
+  identify_minutes: number;    // default 10; 5..30; longest an Identify run may take
+}
+
+// Identify mode: active probing that only runs when started, then switches itself off.
+interface IdentifyStatus {
+  running: boolean;
+  started_at: string | null;   // ISO UTC
+  ends_at: string | null;      // ISO UTC; the run stops by itself at this time at the latest
+  done: number;                // devices checked so far
+  total: number;               // devices in this run
+  current: string | null;      // what it is doing now (an IP, or a step description)
+  port_check: boolean;         // whether this run includes the port check
 }
 ```
 
@@ -123,11 +136,15 @@ interface Settings {
 | POST | `/capture/resume` | `{}` | `Health` |
 | GET | `/settings` | — | `Settings` |
 | PATCH | `/settings` | `Partial<Settings>` | `Settings` |
+| GET | `/identify` | — | `IdentifyStatus` |
+| POST | `/identify/start` | `{ minutes?: 1..30, macs?: string[] }` (default: `identify_minutes`; online devices not identified in 7 days) | `IdentifyStatus`; `409` already running, `423` monitoring paused |
+| POST | `/identify/stop` | `{}` | `IdentifyStatus` |
 
 ### `/stream` (SSE)
 
 - `event: event` — `data: Event` (one per new event)
 - `event: summary` — `data: Summary` (on change, at most every 2 s)
+- `event: identify` — `data: IdentifyStatus` (progress while a run is active; a final frame has `running: false`)
 - `: ping` comment every 15 s (heartbeat)
 - Clients reconnect with `Last-Event-ID` = last `Event.id` to resume.
 

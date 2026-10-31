@@ -13,6 +13,7 @@ from flask import Blueprint, Flask, Response, abort, jsonify, request, send_from
 
 from .. import __version__
 from ..core.events import EventEngine
+from ..core.identify_mode import AlreadyRunning, IdentifySession, MonitoringPaused
 from ..core.pipeline import Pipeline
 from ..core.store import DeviceStore
 from ..settings import Settings
@@ -21,7 +22,9 @@ from ..utils.mac import normalize_mac
 log = logging.getLogger(__name__)
 
 DEV_ORIGIN = "http://localhost:3000"
-EVENT_KINDS = {"joined", "left", "new_device", "ip_changed", "mac_conflict", "alert"}
+EVENT_KINDS = {"joined", "left", "new_device", "ip_changed", "mac_conflict", "alert", "identified"}
+IDLE_IDENTIFY = {"running": False, "started_at": None, "ends_at": None, "done": 0, "total": 0,
+                 "current": None, "port_check": False}
 MAX_STREAMS = 8
 STREAM_PING_S = 15
 STREAM_SUMMARY_S = 2
@@ -39,6 +42,7 @@ class AppContext:
     dev: bool = False
     static_dir: Path | None = None
     save_settings: bool = True
+    identify: IdentifySession | None = None
 
 
 class ApiError(Exception):
@@ -236,13 +240,15 @@ def create_app(ctx: AppContext) -> Flask:
             last_id = None
         inbox: queue.Queue = queue.Queue(maxsize=256)
 
-        def deliver(event: dict) -> None:
+        def deliver(kind: str, payload: dict) -> None:
             try:
-                inbox.put_nowait(event)
+                inbox.put_nowait((kind, payload))
             except queue.Full:
                 pass  # slow client; it can resync with Last-Event-ID
 
-        unsubscribe = ctx.engine.subscribe(deliver)
+        unsubscribers = [ctx.engine.subscribe(lambda event: deliver("event", event))]
+        if ctx.identify:
+            unsubscribers.append(ctx.identify.subscribe(lambda status: deliver("identify", status)))
 
         def frame(kind: str, data: dict, event_id: int | None = None) -> str:
             head = f"id: {event_id}\n" if event_id is not None else ""
@@ -257,8 +263,8 @@ def create_app(ctx: AppContext) -> Flask:
                 next_summary = next_ping = 0.0
                 while True:
                     try:
-                        event = inbox.get(timeout=1)
-                        yield frame("event", event, event["id"])
+                        kind, payload = inbox.get(timeout=1)
+                        yield frame(kind, payload, payload["id"] if kind == "event" else None)
                     except queue.Empty:
                         pass
                     now = time.monotonic()
@@ -273,12 +279,52 @@ def create_app(ctx: AppContext) -> Flask:
                         yield ": ping\n\n"
                         next_ping = now + STREAM_PING_S
             finally:
-                unsubscribe()
+                for unsubscribe in unsubscribers:
+                    unsubscribe()
                 with streams_lock:
                     streams["open"] -= 1
 
         return Response(generate(), mimetype="text/event-stream",
                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # ── Identify mode ────────────────────────────────────────────────────────
+
+    def session() -> IdentifySession:
+        if not ctx.identify:
+            raise ApiError(503, "identify_unavailable", "Identify mode isn't available while capture is off.")
+        return ctx.identify
+
+    @api.get("/identify")
+    def identify_status():
+        return ctx.identify.status() if ctx.identify else IDLE_IDENTIFY
+
+    @api.post("/identify/start")
+    def identify_start():
+        data = body()
+        unknown = set(data) - {"minutes", "macs"}
+        if unknown:
+            raise ApiError(400, "bad_field", f"Unknown field(s): {', '.join(sorted(unknown))}.")
+        minutes = data.get("minutes", ctx.settings.identify_minutes)
+        if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 30:
+            raise ApiError(400, "bad_field", "minutes must be a whole number from 1 to 30.")
+        macs = data.get("macs")
+        if macs is not None:
+            if not isinstance(macs, list) or not all(isinstance(m, str) for m in macs):
+                raise ApiError(400, "bad_field", "macs must be a list of MAC addresses.")
+            macs = [m for m in (normalize_mac(m) for m in macs) if m]
+            if not macs:
+                raise ApiError(400, "bad_field", "None of those MAC addresses are valid.")
+        try:
+            return session().start(minutes, macs)
+        except AlreadyRunning:
+            raise ApiError(409, "already_running", "Identify mode is already running.") from None
+        except MonitoringPaused:
+            raise ApiError(423, "monitoring_paused", "Resume monitoring before identifying devices.") from None
+
+    @api.post("/identify/stop")
+    def identify_stop():
+        body()
+        return session().stop(wait=2)
 
     # ── Settings ─────────────────────────────────────────────────────────────
 

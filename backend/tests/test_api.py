@@ -227,3 +227,98 @@ def test_static_ui_served_with_fallback(ctx, tmp_path):
 def test_unknown_api_route_is_json_404(client):
     resp = client.get("/api/v1/nope")
     assert resp.status_code == 404 and resp.get_json()["error"] == "not_found"
+
+
+# ── Identify mode ────────────────────────────────────────────────────────
+
+@pytest.fixture
+def identify_client(ctx):
+    import threading
+
+    from netsleuth.core.identify_mode import IdentifySession, Probers
+
+    release = threading.Event()
+    probers = Probers(
+        ssdp_search=lambda ip: release.wait(5) and {},
+        fetch_description=lambda url, net: {},
+        mdns_query=lambda ip: 0,
+        netbios_name=lambda ip: "DESKTOP-4FJ2K9Q",
+        reverse_dns=lambda ip: None,
+        port_check=lambda ip: [],
+        http_title=lambda ip, port: None,
+    )
+    ctx.store.observe(LAPTOP, "10.0.0.5")
+    ctx.identify = IdentifySession(ctx.store, ctx.engine, ip_network("10.0.0.0/24"), "10.0.0.2",
+                                   is_paused=lambda: ctx.pipeline.paused, probers=probers, spacing=0)
+    yield create_app(ctx).test_client(), ctx, release
+    release.set()
+    ctx.identify.stop()
+
+
+def post(client, path, data=None):
+    return client.post(path, data=json.dumps(data or {}), headers=JSON)
+
+
+def test_identify_idle_and_unavailable_without_session(client):
+    assert client.get("/api/v1/identify").get_json()["running"] is False
+    assert post(client, "/api/v1/identify/start").status_code == 503
+
+
+def test_identify_start_conflict_and_stop(identify_client):
+    client, ctx, release = identify_client
+    status = post(client, "/api/v1/identify/start", {"minutes": 5}).get_json()
+    assert status["running"] and status["total"] == 1
+    assert client.get("/api/v1/identify").get_json()["running"] is True
+    assert post(client, "/api/v1/identify/start").status_code == 409
+    release.set()
+    post(client, "/api/v1/identify/stop")
+    assert client.get("/api/v1/identify").get_json()["running"] is False
+    assert ctx.store.list_events(kind="identified")
+
+
+def test_identify_refused_while_paused(identify_client):
+    client, ctx, _ = identify_client
+    ctx.pipeline.pause()
+    resp = post(client, "/api/v1/identify/start")
+    assert resp.status_code == 423 and resp.get_json()["error"] == "monitoring_paused"
+
+
+@pytest.mark.parametrize("data", [{"minutes": 0}, {"minutes": 31}, {"minutes": "5"}, {"minutes": True},
+                                  {"macs": "aa:bb"}, {"macs": ["nope"]}, {"other": 1}])
+def test_identify_start_validation(identify_client, data):
+    client, _, _ = identify_client
+    assert post(client, "/api/v1/identify/start", data).status_code == 400
+
+
+def test_identify_start_accepts_specific_macs(identify_client):
+    client, ctx, release = identify_client
+    ctx.store.observe(PHONE, "10.0.0.6")
+    status = post(client, "/api/v1/identify/start", {"macs": [PHONE.upper().replace(":", "-")]}).get_json()
+    assert status["total"] == 1
+    release.set()
+
+
+def test_stream_carries_identify_progress(identify_client):
+    client, ctx, release = identify_client
+    resp = client.get("/api/v1/stream", buffered=False)
+    chunks = (c.decode() for c in resp.response)
+    next(chunks)  # summary
+    post(client, "/api/v1/identify/start")
+    received = ""
+    for _ in range(10):
+        received += next(chunks)
+        if "event: identify" in received:
+            break
+    assert "event: identify" in received and '"running": true' in received
+    release.set()
+    resp.close()
+
+
+def test_identified_is_a_valid_event_kind(client):
+    assert client.get("/api/v1/events?kind=identified").status_code == 200
+
+
+def test_identify_settings(client, ctx):
+    body = patch(client, "/api/v1/settings", {"port_check": True, "identify_minutes": 20}).get_json()
+    assert body["port_check"] is True and body["identify_minutes"] == 20
+    assert patch(client, "/api/v1/settings", {"identify_minutes": 3}).status_code == 400
