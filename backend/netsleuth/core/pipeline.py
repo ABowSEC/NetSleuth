@@ -13,7 +13,7 @@ import time
 from ipaddress import IPv4Network
 from typing import Callable
 
-from .packets import Fact, Flow, Hostname, Query, Sighting, parse
+from .packets import Clue, Fact, Flow, Hostname, Query, Sighting, parse
 from .store import Device, DeviceStore, Observation
 
 log = logging.getLogger(__name__)
@@ -123,6 +123,8 @@ class Pipeline:
                 self.store.set_hostname(fact.mac, fact.hostname)
             elif isinstance(fact, Query):
                 self.store.record_domain(fact.mac, fact.domain)
+            elif isinstance(fact, Clue):
+                self.store.add_evidence(fact.mac, fact.source, fact.key, fact.value, fact.confidence)
             elif isinstance(fact, Flow):
                 if fact.proto == "udp" and not self._new_udp_flow(fact, now):
                     continue

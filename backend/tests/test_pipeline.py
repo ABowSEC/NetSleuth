@@ -134,3 +134,10 @@ def test_sweep_skipped_while_paused(pipeline):
     discovery = Discovery(pipeline, "eth0", "10.0.0.2", lambda: 300, sweeper=fail)
     pipeline.pause()
     assert discovery.sweep_once() == 0
+
+
+def test_clues_reach_the_store(pipeline, store):
+    from netsleuth.core.packets import Clue
+
+    pipeline.apply([Sighting(LAPTOP, "10.0.0.5"), Clue(LAPTOP, "netbios", "name", "DEN-LAPTOP")])
+    assert store.get(LAPTOP).suggested_name == "DEN-LAPTOP"

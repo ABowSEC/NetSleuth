@@ -4,13 +4,15 @@ from scapy.layers.dhcp import BOOTP, DHCP
 from scapy.layers.dns import DNS, DNSQR, DNSRR
 from scapy.layers.inet import IP, TCP, UDP
 from scapy.layers.l2 import ARP, Ether
+from scapy.packet import Raw
 
-from netsleuth.core.packets import Flow, Hostname, Query, Sighting, parse
+from netsleuth.core.packets import Clue, Flow, Hostname, Query, Sighting, parse
 
 NET = ip_network("10.0.0.0/24")
 LAPTOP = "d0:57:7e:00:00:02"
 PHONE = "02:11:22:33:44:55"
 ROUTER = "f4:c1:14:00:00:01"
+ROKU = "a8:b5:7c:00:00:03"
 
 
 def wire(pkt):
@@ -123,3 +125,60 @@ def test_dhcp_placeholder_hostname_is_ignored():
            / UDP(sport=68, dport=67) / BOOTP(op=1, chaddr=bytes.fromhex("021122334455"))
            / DHCP(options=[("message-type", "request"), ("hostname", b"none"), "end"]))
     assert parse(wire(pkt), NET) == [Sighting(PHONE, None)]
+
+
+# ── Identification clues ─────────────────────────────────────────────────
+
+def clues(facts):
+    return {(f.source, f.key): f.value for f in facts if isinstance(f, Clue)}
+
+
+def test_dhcp_request_reveals_client_type_and_fingerprint():
+    pkt = (eth(PHONE, "ff:ff:ff:ff:ff:ff") / IP(src="0.0.0.0", dst="255.255.255.255")
+           / UDP(sport=68, dport=67) / BOOTP(op=1, chaddr=bytes.fromhex("021122334455"))
+           / DHCP(options=[("message-type", "request"), ("vendor_class_id", b"android-dhcp-14"),
+                           ("param_req_list", [1, 3, 6, 15, 26, 28, 51, 58, 59, 43]), "end"]))
+    assert clues(parse(wire(pkt), NET)) == {
+        ("dhcp", "vendor_class"): "android-dhcp-14",
+        ("dhcp", "params"): "1,3,6,15,26,28,51,58,59,43",
+    }
+
+
+def test_mdns_announcement_reveals_services_and_txt():
+    pkt = (eth(PHONE, "01:00:5e:00:00:fb") / IP(src="10.0.0.6", dst="224.0.0.251") / UDP(sport=5353, dport=5353)
+           / DNS(qr=1,
+                 an=[DNSRR(rrname="_googlecast._tcp.local.", type="PTR",
+                           rdata="Living Room TV-abc123._googlecast._tcp.local."),
+                     DNSRR(rrname="Living Room TV-abc123._googlecast._tcp.local.", type="TXT",
+                           rdata=[b"md=Chromecast", b"fn=Living Room TV", b"id=ignored", b"ve=05"])],
+                 ar=[DNSRR(rrname="abc123.local.", type="A", rdata="10.0.0.6")]))
+    facts = parse(wire(pkt), NET)
+    assert clues(facts) == {
+        ("mdns", "service:_googlecast._tcp"): "_googlecast._tcp",
+        ("mdns", "instance:_googlecast._tcp"): "Living Room TV-abc123",
+        ("mdns", "txt:md"): "Chromecast",
+        ("mdns", "txt:fn"): "Living Room TV",
+    }
+    assert Hostname(PHONE, "abc123") in facts
+
+
+def test_mdns_service_enumeration_is_not_a_service():
+    pkt = (eth(PHONE, "01:00:5e:00:00:fb") / IP(src="10.0.0.6", dst="224.0.0.251") / UDP(sport=5353, dport=5353)
+           / DNS(qr=1, an=[DNSRR(rrname="_services._dns-sd._udp.local.", type="PTR", rdata="_airplay._tcp.local.")]))
+    assert clues(parse(wire(pkt), NET)) == {}
+
+
+def test_ssdp_notify_reveals_server_and_location():
+    payload = (b"NOTIFY * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nLOCATION: http://10.0.0.30:8060/\r\n"
+               b"SERVER: Roku/12.5.0 UPnP/1.0 Roku/12.5.0\r\nNT: roku:ecp\r\n\r\n")
+    pkt = eth(ROKU) / IP(src="10.0.0.30", dst="239.255.255.250") / UDP(sport=1900, dport=1900) / Raw(payload)
+    facts = parse(wire(pkt), NET)
+    assert clues(facts) == {("ssdp", "server"): "Roku/12.5.0 UPnP/1.0 Roku/12.5.0",
+                            ("ssdp", "location"): "http://10.0.0.30:8060/"}
+    assert not any(isinstance(f, Flow) for f in facts)
+
+
+def test_ssdp_search_request_is_ignored():
+    payload = b'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nST: ssdp:all\r\n\r\n'
+    pkt = eth() / IP(src="10.0.0.5", dst="239.255.255.250") / UDP(sport=50000, dport=1900) / Raw(payload)
+    assert clues(parse(wire(pkt), NET)) == {}

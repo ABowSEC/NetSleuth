@@ -14,7 +14,7 @@ PHONE = "02:11:22:33:44:55"
 JSON = {"Content-Type": "application/json"}
 
 DEVICE_KEYS = {"mac", "name", "hostname", "vendor", "type", "is_known", "online",
-               "ips", "first_seen", "last_seen", "notes"}
+               "ips", "first_seen", "last_seen", "notes", "model", "os", "suggested_name"}
 
 
 @pytest.fixture

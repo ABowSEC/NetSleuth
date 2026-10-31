@@ -21,12 +21,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..timeutil import iso, parse_iso, utcnow
-from ..utils.classify import classify, is_placeholder_name
+from ..utils.classify import is_placeholder_name
+from ..utils.identify import Evidence, infer
 from ..utils.mac import vendor_for
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+MAX_EVIDENCE_PER_DEVICE = 60
 MAX_IPS_PER_DEVICE = 10
 TOP_N = 20
 
@@ -92,10 +94,31 @@ CREATE TABLE dest_counts (
 );
 """
 
+# v2: identification evidence and derived identity
+_SCHEMA_V2 = """
+CREATE TABLE evidence (
+    mac        TEXT NOT NULL REFERENCES devices(mac) ON DELETE CASCADE,
+    source     TEXT NOT NULL,
+    key        TEXT NOT NULL,
+    value      TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 1.0,
+    first_seen TEXT NOT NULL,
+    last_seen  TEXT NOT NULL,
+    PRIMARY KEY (mac, source, key)
+);
+ALTER TABLE devices ADD COLUMN model TEXT;
+ALTER TABLE devices ADD COLUMN os TEXT;
+ALTER TABLE devices ADD COLUMN is_gateway INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE devices ADD COLUMN last_identified TEXT;
+"""
+
 # version -> SQL that upgrades from version-1. Add entries as the schema evolves.
-_MIGRATIONS: dict[int, str] = {1: _SCHEMA_V1}
+_MIGRATIONS: dict[int, str] = {1: _SCHEMA_V1, 2: _SCHEMA_V2}
 
 _UNSET = object()
+
+# Strongest evidence first when listing it.
+_SOURCE_ORDER = {"upnp": 0, "roku": 1, "mdns": 2, "netbios": 3, "rdns": 4, "dhcp": 5, "ssdp": 6, "ports": 7}
 
 
 @dataclass
@@ -111,11 +134,15 @@ class Device:
     notes: str | None = None
     online: bool = False
     ips: list[str] = field(default_factory=list)  # most recent first
+    model: str | None = None                      # derived from evidence
+    os: str | None = None                         # derived from evidence
+    suggested_name: str | None = None             # derived from evidence
     is_gateway: bool = False                      # internal, not in the API
+    last_identified: str | None = None            # internal, not in the API
 
     def to_api(self) -> dict:
         data = asdict(self)
-        del data["is_gateway"]
+        del data["is_gateway"], data["last_identified"]
         return data
 
     def copy(self) -> "Device":
@@ -146,6 +173,8 @@ class DeviceStore:
         self._session_ops: list[tuple[str, str, str]] = []   # (open|close, mac, ts)
         self._pending_domains: dict[tuple[str, str], list] = {}
         self._pending_dests: dict[tuple[str, str, int], list] = {}
+        self._evidence: dict[str, dict[tuple[str, str], Evidence]] = {}
+        self._pending_evidence: dict[tuple[str, str, str], Evidence] = {}
 
         self._conn = sqlite3.connect(db_path, check_same_thread=False, timeout=10)
         self._conn.row_factory = sqlite3.Row
@@ -208,9 +237,13 @@ class DeviceStore:
                     hostname = None
                 self._devices[row["mac"]] = Device(
                     mac=row["mac"], first_seen=row["first_seen"], last_seen=row["last_seen"],
-                    name=row["name"], hostname=hostname, vendor=row["vendor"],
-                    type=classify(hostname, row["vendor"]) if row["type"] != "router" else "router",
+                    name=row["name"], hostname=hostname, vendor=row["vendor"], type=row["type"],
                     is_known=bool(row["is_known"]), notes=row["notes"],
+                    is_gateway=bool(row["is_gateway"]), last_identified=row["last_identified"],
+                )
+            for row in self._conn.execute("SELECT * FROM evidence"):
+                self._evidence.setdefault(row["mac"], {})[(row["source"], row["key"])] = Evidence(
+                    row["source"], row["key"], row["value"], row["confidence"], row["first_seen"], row["last_seen"],
                 )
             for row in self._conn.execute("SELECT mac, ip FROM device_ips ORDER BY last_seen"):
                 device = self._devices.get(row["mac"])
@@ -219,6 +252,7 @@ class DeviceStore:
                     self._ip_owner[row["ip"]] = row["mac"]
         for device in self._devices.values():
             del device.ips[MAX_IPS_PER_DEVICE:]
+            self._reidentify(device)
         log.info("Loaded %d device(s) from storage", len(self._devices))
 
     # ── Hot path (memory only) ───────────────────────────────────────────────
@@ -231,8 +265,8 @@ class DeviceStore:
             is_new = device is None
             if is_new:
                 vendor = vendor_for(mac)
-                device = Device(mac=mac, first_seen=stamp, last_seen=stamp,
-                                vendor=vendor, type=classify(None, vendor))
+                device = Device(mac=mac, first_seen=stamp, last_seen=stamp, vendor=vendor)
+                self._reidentify(device)
                 self._devices[mac] = device
 
             previous_last_seen = None if is_new else device.last_seen
@@ -267,7 +301,7 @@ class DeviceStore:
             if not device or not hostname or hostname == device.hostname:
                 return
             device.hostname = hostname
-            device.type = classify(hostname, device.vendor, device.is_gateway)
+            self._reidentify(device)
             self._dirty_devices.add(mac)
 
     def mark_gateway(self, mac: str) -> None:
@@ -275,7 +309,51 @@ class DeviceStore:
             device = self._devices.get(mac)
             if device and not device.is_gateway:
                 device.is_gateway = True
-                device.type = "router"
+                self._reidentify(device)
+                self._dirty_devices.add(mac)
+
+    # ── Identification evidence ──────────────────────────────────────────────
+
+    def _reidentify(self, device: Device) -> None:
+        """Recompute type/model/os/suggestion from evidence. Caller holds _lock."""
+        identity = infer(list(self._evidence.get(device.mac, {}).values()),
+                         device.vendor, device.hostname, device.is_gateway)
+        device.type, device.model = identity.type, identity.model
+        device.os, device.suggested_name = identity.os, identity.suggested_name
+
+    def add_evidence(self, mac: str, source: str, key: str, value: str,
+                     confidence: float = 1.0, ts: datetime | None = None) -> bool:
+        """Record a clue about ``mac``. Returns True if it changed what we know."""
+        value = value.strip()[:200]
+        if not value:
+            return False
+        stamp = iso(ts or utcnow())
+        with self._lock:
+            device = self._devices.get(mac)
+            if not device:
+                return False
+            items = self._evidence.setdefault(mac, {})
+            existing = items.get((source, key))
+            if existing is None and len(items) >= MAX_EVIDENCE_PER_DEVICE:
+                return False
+            changed = existing is None or existing.value != value
+            item = Evidence(source, key, value, confidence, existing.first_seen if existing else stamp, stamp)
+            items[(source, key)] = item
+            self._pending_evidence[(mac, source, key)] = item
+            if changed:
+                self._reidentify(device)
+                self._dirty_devices.add(mac)
+            return changed
+
+    def evidence(self, mac: str) -> list[Evidence]:
+        with self._lock:
+            return list(self._evidence.get(mac, {}).values())
+
+    def mark_identified(self, mac: str, ts: datetime | None = None) -> None:
+        with self._lock:
+            device = self._devices.get(mac)
+            if device:
+                device.last_identified = iso(ts or utcnow())
                 self._dirty_devices.add(mac)
 
     def record_domain(self, mac: str, domain: str, ts: datetime | None = None) -> None:
@@ -319,10 +397,11 @@ class DeviceStore:
             devices = [self._devices[m].copy() for m in self._dirty_devices if m in self._devices]
             ips, sessions = self._dirty_ips, self._session_ops
             domains, dests = self._pending_domains, self._pending_dests
+            evidence = self._pending_evidence
             self._dirty_devices, self._dirty_ips, self._session_ops = set(), {}, []
-            self._pending_domains, self._pending_dests = {}, {}
+            self._pending_domains, self._pending_dests, self._pending_evidence = {}, {}, {}
 
-        if not (devices or ips or sessions or domains or dests):
+        if not (devices or ips or sessions or domains or dests or evidence):
             return
 
         with self._db_lock, self._conn:
@@ -334,6 +413,7 @@ class DeviceStore:
             sessions = [op for op in sessions if op[1] in live]
             domains = {k: v for k, v in domains.items() if k[0] in live}
             dests = {k: v for k, v in dests.items() if k[0] in live}
+            evidence = {k: v for k, v in evidence.items() if k[0] in live}
 
             self._upsert_devices(devices)
             self._conn.executemany(
@@ -358,16 +438,27 @@ class DeviceStore:
                 "last_seen = MAX(last_seen, excluded.last_seen)",
                 [(mac, addr, port, n, ts) for (mac, addr, port), (n, ts) in dests.items()],
             )
+            self._conn.executemany(
+                "INSERT INTO evidence(mac, source, key, value, confidence, first_seen, last_seen) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(mac, source, key) DO UPDATE SET value = excluded.value, "
+                "confidence = excluded.confidence, last_seen = excluded.last_seen",
+                [(mac, e.source, e.key, e.value, e.confidence, e.first_seen, e.last_seen)
+                 for (mac, _, _), e in evidence.items()],
+            )
 
     def _upsert_devices(self, devices: list[Device]) -> None:
         """Caller holds _db_lock inside a transaction."""
         self._conn.executemany(
-            "INSERT INTO devices(mac, name, hostname, vendor, type, is_known, notes, first_seen, last_seen) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "INSERT INTO devices(mac, name, hostname, vendor, type, is_known, notes, first_seen, last_seen, "
+            "model, os, is_gateway, last_identified) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(mac) DO UPDATE SET name = excluded.name, hostname = excluded.hostname, "
             "vendor = excluded.vendor, type = excluded.type, is_known = excluded.is_known, "
-            "notes = excluded.notes, last_seen = excluded.last_seen",
-            [(d.mac, d.name, d.hostname, d.vendor, d.type, int(d.is_known), d.notes, d.first_seen, d.last_seen)
+            "notes = excluded.notes, last_seen = excluded.last_seen, model = excluded.model, "
+            "os = excluded.os, is_gateway = excluded.is_gateway, last_identified = excluded.last_identified",
+            [(d.mac, d.name, d.hostname, d.vendor, d.type, int(d.is_known), d.notes, d.first_seen, d.last_seen,
+              d.model, d.os, int(d.is_gateway), d.last_identified)
              for d in devices],
         )
 
@@ -396,8 +487,9 @@ class DeviceStore:
         with self._lock:
             if mac not in self._devices:
                 vendor = vendor_for(mac)
-                self._devices[mac] = Device(mac=mac, first_seen=stamp, last_seen=stamp,
-                                            vendor=vendor, type=classify(None, vendor))
+                device = Device(mac=mac, first_seen=stamp, last_seen=stamp, vendor=vendor)
+                self._reidentify(device)
+                self._devices[mac] = device
         self.update(mac, name=name, is_known=True)
 
     def forget(self, mac: str) -> bool:
@@ -414,6 +506,8 @@ class DeviceStore:
             self._session_ops = [op for op in self._session_ops if op[1] != mac]
             self._pending_domains = {k: v for k, v in self._pending_domains.items() if k[0] != mac}
             self._pending_dests = {k: v for k, v in self._pending_dests.items() if k[0] != mac}
+            self._evidence.pop(mac, None)
+            self._pending_evidence = {k: v for k, v in self._pending_evidence.items() if k[0] != mac}
         with self._db_lock, self._conn:
             self._conn.execute("DELETE FROM devices WHERE mac = ?", (mac,))
             self._conn.execute("DELETE FROM events WHERE mac = ?", (mac,))
@@ -497,8 +591,13 @@ class DeviceStore:
             sessions = self._conn.execute(
                 "SELECT start, end FROM sessions WHERE mac = ? AND (end IS NULL OR end >= ?) "
                 "ORDER BY start", (mac, week_ago)).fetchall()
+        clues = sorted(self.evidence(mac), key=lambda e: (_SOURCE_ORDER.get(e.source, 99), e.key))
         return {
             **device.to_api(),
+            "evidence": [{"source": e.source, "key": e.key, "value": e.value,
+                          "confidence": e.confidence, "last_seen": e.last_seen} for e in clues],
+            "suggestion": ({"name": device.suggested_name, "model": device.model, "os": device.os,
+                            "type": device.type} if (device.suggested_name or device.model or device.os) else None),
             "top_domains": [dict(r) for r in domains],
             "top_destinations": [{**dict(r), "port": None if r["port"] < 0 else r["port"]} for r in dests],
             "presence": [dict(r) for r in sessions],

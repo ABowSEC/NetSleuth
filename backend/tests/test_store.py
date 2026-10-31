@@ -238,3 +238,101 @@ def test_placeholder_hostname_cleared_and_type_reclassified_on_load(store, db_pa
         assert device.type == "iot"   # Intellirocks re-classified with the fixed rules
     finally:
         reloaded.close()
+
+
+# ── Identification evidence (schema v2) ──────────────────────────────────
+
+ROKU = "a8:b5:7c:00:00:03"
+
+
+def test_evidence_updates_identity_and_survives_restart(store, db_path):
+    store.observe(ROKU, "10.0.0.30")
+    assert store.add_evidence(ROKU, "upnp", "modelName", "Roku Ultra")
+    assert store.add_evidence(ROKU, "upnp", "friendlyName", "Bedroom Roku")
+    assert not store.add_evidence(ROKU, "upnp", "modelName", "Roku Ultra")  # same value: no change
+    device = store.get(ROKU)
+    assert (device.type, device.model, device.suggested_name) == ("tv", "Roku Ultra", "Bedroom Roku")
+
+    reloaded = reopen(store, db_path)
+    try:
+        device = reloaded.get(ROKU)
+        assert (device.model, device.suggested_name) == ("Roku Ultra", "Bedroom Roku")
+        assert {(e.source, e.key) for e in reloaded.evidence(ROKU)} == {("upnp", "modelName"), ("upnp", "friendlyName")}
+    finally:
+        reloaded.close()
+
+
+def test_detail_lists_evidence_and_suggestion(store):
+    store.observe(ROKU)
+    assert store.detail(ROKU)["suggestion"] is None
+    store.add_evidence(ROKU, "dhcp", "vendor_class", "udhcp 1.31.1")
+    store.add_evidence(ROKU, "upnp", "modelName", "Roku Ultra")
+    detail = store.detail(ROKU)
+    assert [e["source"] for e in detail["evidence"]] == ["upnp", "dhcp"]   # strongest first
+    assert detail["suggestion"] == {"name": "Roku Ultra", "model": "Roku Ultra", "os": "Embedded Linux", "type": "tv"}
+    assert "last_identified" not in detail and "is_gateway" not in detail
+
+
+def test_evidence_for_unknown_device_or_blank_value_is_ignored(store):
+    assert not store.add_evidence(ROKU, "upnp", "modelName", "Roku Ultra")
+    store.observe(ROKU)
+    assert not store.add_evidence(ROKU, "upnp", "modelName", "   ")
+
+
+def test_evidence_is_capped_per_device(store):
+    from netsleuth.core.store import MAX_EVIDENCE_PER_DEVICE
+
+    store.observe(ROKU)
+    for i in range(MAX_EVIDENCE_PER_DEVICE + 10):
+        store.add_evidence(ROKU, "mdns", f"service:_s{i}._tcp", f"_s{i}._tcp")
+    assert len(store.evidence(ROKU)) == MAX_EVIDENCE_PER_DEVICE
+
+
+def test_forget_removes_evidence(store, db_path):
+    store.observe(ROKU)
+    store.add_evidence(ROKU, "upnp", "modelName", "Roku Ultra")
+    store.flush()
+    store.forget(ROKU)
+    assert store.evidence(ROKU) == []
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0] == 0
+
+
+def test_gateway_flag_survives_restart(store, db_path):
+    store.observe(ROUTER, "10.0.0.1")
+    store.mark_gateway(ROUTER)
+    store.add_evidence(ROUTER, "mdns", "service:_googlecast._tcp", "_googlecast._tcp")
+    reloaded = reopen(store, db_path)
+    try:
+        assert reloaded.get(ROUTER).type == "router"
+    finally:
+        reloaded.close()
+
+
+def test_mark_identified_persists_but_stays_internal(store, db_path):
+    store.observe(ROKU)
+    store.mark_identified(ROKU)
+    assert "last_identified" not in store.get(ROKU).to_api()
+    reloaded = reopen(store, db_path)
+    try:
+        assert reloaded.get(ROKU).last_identified
+    finally:
+        reloaded.close()
+
+
+def test_v1_database_migrates_to_v2(db_path):
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(store_mod._SCHEMA_V1)
+        conn.execute("INSERT INTO meta(key, value) VALUES ('schema_version', '1')")
+        conn.execute("INSERT INTO devices(mac, name, type, is_known, first_seen, last_seen) "
+                     "VALUES (?, 'Study laptop', 'computer', 1, '2026-10-01T00:00:00Z', '2026-10-30T00:00:00Z')",
+                     (LAPTOP,))
+    migrated = DeviceStore(db_path)
+    try:
+        assert migrated.get_meta("schema_version") == "2"
+        assert migrated.get(LAPTOP).name == "Study laptop"
+        migrated.observe(LAPTOP)
+        assert migrated.add_evidence(LAPTOP, "netbios", "name", "DEN-LAPTOP")
+        migrated.flush()
+    finally:
+        migrated.close()

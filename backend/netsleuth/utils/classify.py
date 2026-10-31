@@ -56,7 +56,17 @@ def _match(rules: list[tuple[str, str]], text: str | None) -> str | None:
     return None
 
 
+def type_from_name(name: str | None) -> str | None:
+    """Device type suggested by a device-chosen name (hostname, mDNS/UPnP name)."""
+    return _match(_HOSTNAME_RULES, name)
+
+
+def type_from_vendor(vendor: str | None) -> str | None:
+    """Device type suggested by the network chip's maker (weak: makers span categories)."""
+    return _match(_VENDOR_RULES, vendor)
+
+
 def classify(hostname: str | None, vendor: str | None, is_gateway: bool = False) -> str:
     if is_gateway:
         return "router"
-    return _match(_HOSTNAME_RULES, hostname) or _match(_VENDOR_RULES, vendor) or "unknown"
+    return type_from_name(hostname) or type_from_vendor(vendor) or "unknown"

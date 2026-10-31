@@ -43,12 +43,28 @@ interface Device {
   first_seen: string;          // ISO UTC
   last_seen: string;           // ISO UTC
   notes: string | null;
+  // Identification (derived from evidence; null when unknown)
+  model: string | null;          // e.g. "Roku Ultra", "MacBook Pro"
+  os: string | null;             // e.g. "Android 14", "Windows"
+  suggested_name: string | null; // best name the device gave itself, offered to the user
+}
+
+type EvidenceSource = "upnp" | "roku" | "mdns" | "netbios" | "rdns" | "dhcp" | "ssdp" | "ports";
+
+interface EvidenceItem {
+  source: EvidenceSource;
+  key: string;                   // e.g. "modelName", "txt:md", "service:_googlecast._tcp", "vendor_class"
+  value: string;
+  confidence: number;            // 0..1
+  last_seen: string;             // ISO UTC
 }
 
 interface DeviceDetail extends Device {
   top_domains: { domain: string; count: number; last_seen: string }[];
   top_destinations: { address: string; port: number | null; count: number; last_seen: string }[];
   presence: { start: string; end: string | null }[];   // last 7 days of online sessions
+  evidence: EvidenceItem[];      // strongest source first
+  suggestion: { name: string | null; model: string | null; os: string | null; type: DeviceType } | null;
 }
 
 type EventKind = "joined" | "left" | "new_device" | "ip_changed" | "mac_conflict" | "alert";
