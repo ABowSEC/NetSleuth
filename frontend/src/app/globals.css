@@ -1,31 +1,74 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+/* dark: follows the data-theme attribute set by ThemeProvider (and the boot script). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/*
+ * Colour carries meaning only: green = here now, amber = not recognised yet,
+ * red = something wrong, blue = informational. Everything else is ink on paper,
+ * and "accent" is the ink itself (primary buttons, focus rings).
+ */
+:root {
+  --bg: #f6f5f1;
+  --surface: #fffefb;
+  --surface-2: #eeece6;
+  --border: #e0ddd4;
+  --text: #1d1c1a;
+  --muted: #6d6961;
+  --accent: #1d1c1a;
+  --accent-soft: #eeece6;
+  --ok: #1a7f37;
+  --warn: #a85a00;
+  --danger: #c2321b;
+  --info: #2d5bc7;
+  color-scheme: light;
 }
 
 [data-theme="dark"] {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --bg: #131312;
+  --surface: #1b1a18;
+  --surface-2: #252421;
+  --border: #353330;
+  --text: #edebe6;
+  --muted: #9b978e;
+  --accent: #edebe6;
+  --accent-soft: #252421;
+  --ok: #46c25d;
+  --warn: #e3a32b;
+  --danger: #f2654d;
+  --info: #7aa2f7;
+  color-scheme: dark;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

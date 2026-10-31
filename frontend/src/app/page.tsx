@@ -1,138 +1,178 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useNetworkData }   from "../hooks/useNetworkData"
-import { useNotifications } from "../hooks/useNotifications"
-import { StatsCard }        from "../components/StatsCard"
-import { ControlPanel }     from "../components/ControlPanel"
-import { DeviceTable }      from "../components/DeviceTable"
-import { AlertPanel }       from "../components/AlertPanel"
-import { ThemeToggle }      from "../components/ui/ThemeToggle"
-import { ErrorBanner }      from "../components/ui/ErrorBanner"
-import { SkeletonCard, SkeletonTable } from "../components/ui/SkeletonCard"
-import type { Filter } from "../lib/types"
+import { Fragment, Suspense, useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { DeviceDrawer } from "@/components/DeviceDrawer";
+import { DeviceRows, NewcomerList } from "@/components/DeviceList";
+import { Card, EmptyLine, ErrorNotice, GroupHeading } from "@/components/ui";
+import { useLive } from "@/context/LiveContext";
+import { useToast } from "@/context/ToastContext";
+import { useResource } from "@/hooks/useResource";
+import { api } from "@/lib/api";
+import { groupDevices } from "@/lib/devices";
+import { displayName } from "@/lib/format";
+import type { Device, DevicePatch } from "@/lib/types";
 
-export default function Dashboard() {
-  const { data, isLoading, error, history, refetch } = useNetworkData()
-  const { permission, requestPermission } = useNotifications()
+export default function DevicesPage() {
+  return (
+    <Suspense fallback={<FirstSweep />}>
+      <DevicesView />
+    </Suspense>
+  );
+}
 
-  const [search, setSearch]       = useState("")
-  const [activeFilter, setFilter] = useState<Filter>("all")
+function DevicesView() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const toast = useToast();
+  const { health } = useLive();
 
-  const exportData = () => {
-    if (!data) return
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement("a")
-    a.href     = url
-    a.download = `netsleuth_${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`
-    document.body.appendChild(a); a.click()
-    document.body.removeChild(a); URL.revokeObjectURL(url)
-  }
+  const openMac = params.get("device");
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState<Set<string>>(new Set());
 
-  const clearData = async () => {
-    if (!confirm("Clear all device data?")) return
-    await fetch("/api/clear-data", { method: "POST" })
-    refetch()
-  }
+  const loadDevices = useCallback((signal: AbortSignal) => api.devices({}, signal), []);
+  const { data, error, reload, setData } = useResource("devices", loadDevices);
+  const devices = useMemo(() => data ?? [], [data]);
+  const groups = useMemo(() => groupDevices(devices, query), [devices, query]);
 
-  const clearAlerts = async () => {
-    await fetch("/api/alerts/clear", { method: "POST" })
-    refetch()
-  }
+  const setDeviceParam = (mac: string | null) => {
+    const next = new URLSearchParams(params.toString());
+    if (mac === null) next.delete("device");
+    else next.set("device", mac);
+    const qs = next.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
 
-  const unknownCount = data?.unknown_devices ?? 0
+  const replaceDevice = useCallback((updated: Device) => {
+    setData((list) => list?.map((d) => (d.mac === updated.mac ? { ...d, ...updated } : d)) ?? list);
+  }, [setData]);
 
-  const stats = [
-    { label: "Devices",     value: data?.total_devices    ?? "--", key: "devices" as const,     accent: "#6366f1" },
-    { label: "Unknown",     value: unknownCount,                   key: null,                   accent: unknownCount > 0 ? "#f97316" : "#22c55e" },
-    { label: "Connections", value: data?.total_connections ?? "--", key: "connections" as const, accent: "#8b5cf6" },
-    { label: "DNS Queries", value: data?.total_dns_queries ?? "--", key: "dns" as const,         accent: "#a855f7" },
-    { label: "Last Update", value: data?.last_update       ?? "--:--", key: null,               accent: "#6366f1" },
-  ]
+  const patch = async (mac: string, change: DevicePatch, success: (d: Device) => string) => {
+    setBusy((s) => new Set(s).add(mac));
+    try {
+      const updated = await api.updateDevice(mac, change);
+      replaceDevice(updated);
+      toast.success(success(updated));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't update that device.");
+    } finally {
+      setBusy((s) => {
+        const next = new Set(s);
+        next.delete(mac);
+        return next;
+      });
+    }
+  };
+
+  if (!data && !error) return <FirstSweep />;
+
+  const online = devices.filter((d) => d.online).length;
+  const unrecognised = devices.filter((d) => !d.is_known).length;
+  const away = devices.length - online;
+  const nothingMatches = query && !groups.unrecognised.length && !groups.here.length && !groups.away.length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-500 to-purple-700 p-4">
+    <div className="space-y-8">
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          <span className="tabular-nums">{online}</span> {online === 1 ? "device" : "devices"} on your network right now
+        </h1>
+        <p className="text-sm text-muted">
+          {[
+            unrecognised > 0 && <span className="text-warn">{unrecognised} not recognised yet</span>,
+            away > 0 && `${away} away`,
+            health?.interface && `watching ${health.interface}`,
+          ].filter(Boolean).map((part, i) => (
+            <Fragment key={i}>{i > 0 && " · "}{part}</Fragment>
+          ))}
+        </p>
+      </header>
 
-      {/* Header */}
-      <div className="text-center mb-4 relative">
-        <h1 className="text-3xl font-bold text-white tracking-tight">NetSleuth</h1>
-        <p className="text-indigo-200 text-sm mt-1">Home Network Monitor</p>
-        <div className="absolute right-0 top-0 flex items-center gap-2">
-          {permission === "default" && (
-            <button
-              onClick={requestPermission}
-              className="px-3 py-1 rounded-lg border border-white/30 text-white/80 text-xs hover:bg-white/10 transition-colors"
-            >
-              Enable Notifications
-            </button>
-          )}
-          <ThemeToggle />
-        </div>
-      </div>
+      {error && <ErrorNotice message={error} onRetry={reload} />}
 
-      {error && <ErrorBanner message={error} onRetry={refetch} />}
-
-      {/* Unknown device banner */}
-      {unknownCount > 0 && (
-        <div className="mb-4 px-4 py-3 rounded-xl bg-orange-500/90 text-white flex items-center gap-3 shadow">
-          <span className="text-xl">⚠</span>
-          <span className="font-semibold">
-            {unknownCount} unknown device{unknownCount !== 1 ? "s" : ""} on your network
-          </span>
-          <span className="text-orange-100 text-sm">— scroll down to name them</span>
-        </div>
+      {devices.length > 0 && (
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Find a device by name, maker, IP or MAC"
+          aria-label="Find a device"
+          className="h-10 w-full rounded-md border border-border bg-surface px-3 text-sm placeholder:text-muted/70 sm:max-w-sm"
+        />
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-5 gap-3 mb-4">
-        {isLoading && !data
-          ? Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
-          : stats.map(s => (
-              <StatsCard
-                key={s.label}
-                label={s.label}
-                value={s.value}
-                accent={s.accent}
-                trend={s.key ? history.map(h => ({ value: h[s.key as keyof typeof h] as number })) : undefined}
-              />
-            ))
-        }
-      </div>
+      {devices.length === 0 && !error && (
+        <Card>
+          <EmptyLine>
+            No devices yet. NetSleuth sweeps the network a few seconds after it starts and every few minutes after that,
+            so anything switched on should appear shortly.
+          </EmptyLine>
+        </Card>
+      )}
 
-      {/* Controls */}
-      <ControlPanel
-        search={search}
-        onSearch={setSearch}
-        activeFilter={activeFilter}
-        onFilter={setFilter}
-        onExport={exportData}
-        onClearData={clearData}
-      />
+      {nothingMatches && <p className="text-sm text-muted">No device matches &quot;{query}&quot;.</p>}
 
-      {/* Main grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
+      {groups.unrecognised.length > 0 && (
+        <section>
+          <GroupHeading count={groups.unrecognised.length} tone="text-warn">Haven&apos;t met these yet</GroupHeading>
+          <Card className="border-warn/40">
+            <NewcomerList
+              devices={groups.unrecognised}
+              busy={busy}
+              onOpen={setDeviceParam}
+              onName={(mac, name) => patch(mac, { name, is_known: true }, () => `Saved as "${name}".`)}
+              onApprove={(mac) => patch(mac, { is_known: true }, (d) => `${displayName(d)} is marked as yours.`)}
+            />
+          </Card>
+          <p className="mt-2 text-xs text-muted">
+            Named or approved devices move into the lists below, so the next stranger stands out.
+          </p>
+        </section>
+      )}
 
-        {isLoading && !data ? (
-          <SkeletonTable />
-        ) : (
-          <DeviceTable
-            devices={data?.devices ?? {}}
-            search={search}
-            activeFilter={activeFilter}
-            onDeviceClaimed={refetch}
-          />
-        )}
+      {(groups.here.length > 0 || (!query && devices.length > 0)) && (
+        <section>
+          <GroupHeading count={groups.here.length} tone="text-ok">Home now</GroupHeading>
+          <Card>
+            {groups.here.length ? (
+              <DeviceRows devices={groups.here} onOpen={setDeviceParam} />
+            ) : (
+              <EmptyLine>None of the devices you&apos;ve recognised are online right now.</EmptyLine>
+            )}
+          </Card>
+        </section>
+      )}
 
-        <AlertPanel alerts={data?.alerts ?? []} onClear={clearAlerts} />
+      {groups.away.length > 0 && (
+        <section>
+          <GroupHeading count={groups.away.length}>Away</GroupHeading>
+          <Card>
+            <DeviceRows devices={groups.away} onOpen={setDeviceParam} />
+          </Card>
+        </section>
+      )}
 
-      </div>
-
-      <p className="text-center text-indigo-200 text-xs mt-4">
-        <span className="inline-block w-2 h-2 rounded-full bg-green-400 mr-1.5 animate-pulse align-middle" />
-        Auto-updating every 5 seconds
-      </p>
-
+      {openMac && (
+        <DeviceDrawer
+          mac={openMac}
+          onClose={() => setDeviceParam(null)}
+          onChanged={replaceDevice}
+          onForgotten={(mac) => {
+            setData((list) => list?.filter((d) => d.mac !== mac) ?? list);
+            setDeviceParam(null);
+          }}
+        />
+      )}
     </div>
-  )
+  );
+}
+
+function FirstSweep() {
+  return (
+    <p className="py-16 text-center text-sm text-muted" role="status">
+      Asking NetSleuth what&apos;s on your network…
+    </p>
+  );
 }

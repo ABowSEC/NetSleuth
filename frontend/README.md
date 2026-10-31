@@ -1,36 +1,20 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NetSleuth UI
 
-## Getting Started
+Next.js 16 app, exported as static files (`out/`) that the NetSleuth backend serves on its own port. It talks to the backend through the v1 API in [`docs/API_CONTRACT.md`](../docs/API_CONTRACT.md).
 
-First, run the development server:
+## Scripts
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+| Command | What it does |
+|---|---|
+| `npm run dev:mock` | Dev server on :3000 with a built-in fake API (`scripts/dev-mock.mjs`). No backend needed. |
+| `npm run dev` | Dev server on :3000 that proxies `/api` to `BACKEND_URL` (default `http://localhost:5000`). Start the backend with `--dev` so it accepts changes from :3000. |
+| `npm run build` | Static export to `out/`. The backend picks it up automatically. |
+| `npm run check` | Type check, lint and unit tests. |
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Layout
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `src/app/`: pages: Devices (`/`, the drawer opens with `?device=<mac>`), Activity, Settings
+- `src/lib/api.ts`: typed client. `guards.ts` reshapes responses so bad data can't crash a page.
+- `src/lib/mock.ts`: the fake API used by `dev:mock`. All of its data is invented.
+- `src/context/LiveContext.tsx`: one live connection per tab: a server-sent event stream, with polling while the stream is down and the tab is visible
+- `src/hooks/useResource.ts`: fetch, cancel and refresh logic shared by every page

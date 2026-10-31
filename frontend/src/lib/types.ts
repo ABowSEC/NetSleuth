@@ -1,64 +1,90 @@
-export type Severity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-export type DeviceType = "apple" | "router" | "tv" | "dns" | "gaming" | "other"
-export type SortKey = "label" | "type" | "ip" | "mac" | "connections" | "dns" | "last_seen"
-export type Filter = DeviceType | "all"
-export type Theme = "light" | "dark" | "system"
+// Mirrors docs/API_CONTRACT.md (v1).
+
+export const DEVICE_TYPES = [
+  "router", "computer", "phone", "tablet", "tv", "speaker",
+  "camera", "printer", "console", "iot", "unknown",
+] as const;
+export type DeviceType = (typeof DEVICE_TYPES)[number];
 
 export interface Device {
-  hostname: string
-  mac: string
-  dns_queries: string[]
-  connections: string[]
-  services: string[]
-  first_seen: string
-  last_seen: string
-  is_known: boolean
-  friendly_name: string
-  connection_count: number
-  dns_count: number
+  mac: string;
+  name: string | null;
+  hostname: string | null;
+  vendor: string | null;
+  type: DeviceType;
+  is_known: boolean;
+  online: boolean;
+  ips: string[];
+  first_seen: string;
+  last_seen: string;
+  notes: string | null;
 }
 
-export interface Alert {
-  timestamp: string
-  message: string
-  type: string
-  severity: Severity
+export interface DomainCount {
+  domain: string;
+  count: number;
+  last_seen: string;
 }
 
-export interface NetworkData {
-  devices: Record<string, Device>
-  last_update: string | null
-  total_devices: number
-  unknown_devices: number
-  total_connections: number
-  total_dns_queries: number
-  alerts: Alert[]
+export interface DestinationCount {
+  address: string;
+  port: number | null;
+  count: number;
+  last_seen: string;
 }
 
-export interface TrendPoint {
-  t: number
-  devices: number
-  connections: number
-  dns: number
-  alerts: number
+export interface PresenceSession {
+  start: string;
+  end: string | null;
 }
 
-export interface SuspiciousDevice {
-  ip: string
-  score: number | null
-  level: Severity | "NORMAL"
-  total_anomalies: number
-  recent_anomalies: [string, number][]
-  last_seen: string | null
+export interface DeviceDetail extends Device {
+  top_domains: DomainCount[];
+  top_destinations: DestinationCount[];
+  presence: PresenceSession[];
 }
 
-export interface AnomalyEvent {
-  timestamp: string
-  src_ip: string
-  dst_ip: string
-  src_port: number
-  dst_port: number
-  protocol: string
-  score: number
-  extra: Record<string, unknown>
+export const EVENT_KINDS = ["joined", "left", "new_device", "ip_changed", "mac_conflict", "alert"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+export const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
+export interface NetEvent {
+  id: number;
+  ts: string;
+  kind: EventKind;
+  mac: string | null;
+  severity: Severity;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+export interface Summary {
+  online: number;
+  offline: number;
+  unknown: number;
+  total: number;
+  last_update: string;
+}
+
+export interface Health {
+  status: "ok";
+  version: string;
+  capturing: boolean;
+  interface: string | null;
+}
+
+export interface Settings {
+  offline_timeout_s: number;
+  sweep_interval_s: number;
+  retention_days: number;
+  lan_exposure: boolean;
+  anomaly_plugin: boolean;
+}
+
+export interface DevicePatch {
+  name?: string | null;
+  is_known?: boolean;
+  notes?: string | null;
 }
