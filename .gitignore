@@ -61,3 +61,6 @@ backend/netsleuth/config/known_devices.json
 netsleuth_export_*.json
 *.pptx
 *.pdf
+
+# Packaging metadata from pip install -e
+*.egg-info/
