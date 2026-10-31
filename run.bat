@@ -1,32 +1,14 @@
 @echo off
 setlocal
+cd /d "%~dp0"
 
-:: Packet capture requires admin
-net session >nul 2>&1
-if %errorlevel% neq 0 (
-    echo.
-    echo  [!] NetSleuth requires Administrator privileges for packet capture.
-    echo      Right-click this file and select "Run as administrator".
-    echo.
+rem Starts the NetSleuth tray icon, which runs and watches the backend.
+rem No administrator rights needed unless Npcap was installed admin-only.
+
+if not exist ".venv\Scripts\pythonw.exe" (
+    echo NetSleuth isn't set up yet. Run setup.bat first.
     pause
     exit /b 1
 )
-
-set ROOT=%~dp0
-
-:: Install frontend deps if needed
-if not exist "%ROOT%frontend\node_modules" (
-    echo  [i] Installing frontend dependencies...
-    pushd "%ROOT%frontend"
-    npm install
-    popd
-    echo.
-    echo  [i] Dependencies installed. Re-run this script to start NetSleuth.
-    echo.
-    pause
-    exit /b 0
-)
-
-python "%ROOT%launcher.py"
-
+start "" ".venv\Scripts\pythonw.exe" "%~dp0tray\launch.pyw"
 endlocal
