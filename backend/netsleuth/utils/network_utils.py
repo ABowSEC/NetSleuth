@@ -1,5 +1,9 @@
-import psutil
+import ipaddress
 import socket
+from dataclasses import dataclass
+
+import psutil
+
 
 def get_active_interfaces():
     interfaces = []
@@ -8,22 +12,34 @@ def get_active_interfaces():
             interfaces.append(iface_name)
     return sorted(interfaces)
 
+
+@dataclass(frozen=True)
+class InterfaceInfo:
+    name: str
+    ip: str
+    network: ipaddress.IPv4Network
+
+
+def interface_info(name: str) -> InterfaceInfo | None:
+    """IPv4 address and subnet of ``name`` (from its real netmask), or None."""
+    for addr in psutil.net_if_addrs().get(name, []):
+        if addr.family == socket.AF_INET and addr.netmask:
+            iface = ipaddress.IPv4Interface(f"{addr.address}/{addr.netmask}")
+            return InterfaceInfo(name, addr.address, iface.network)
+    return None
+
+
+def default_gateway_ip() -> str | None:
+    """IPv4 default gateway from the OS routing table, via scapy."""
+    try:
+        from scapy.config import conf
+        gateway = conf.route.route("0.0.0.0")[2]
+    except Exception:
+        return None
+    return gateway if gateway and gateway != "0.0.0.0" else None
+
+
 def get_gateway_ips() -> set:
     """Return a best-guess set of gateway IPs for the active network."""
-    gateways = set()
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-        prefix = local_ip.rsplit(".", 1)[0]
-        gateways.add(f"{prefix}.1")
-    except Exception:
-        pass
-    return gateways
-
-def get_interface_ip(iface_name):
-    addrs = psutil.net_if_addrs().get(iface_name, [])
-    for addr in addrs:
-        if addr.family == socket.AF_INET:
-            return addr.address
-    return "N/A"
+    gateway = default_gateway_ip()
+    return {gateway} if gateway else set()
