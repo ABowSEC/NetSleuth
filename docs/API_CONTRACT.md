@@ -121,11 +121,13 @@ interface Settings {
 
 ```
 python -m netsleuth [--interface NAME] [--host 127.0.0.1] [--port 5000]
-                    [--headless] [--dev] [--log-file PATH]
+                    [--headless] [--dev] [--log-file PATH] [--exit-on-stdin-close]
 ```
 
 - `--headless`: no interactive prompts; fails with exit code `2` if `--interface` is missing and more than one candidate exists.
 - `--dev`: allows `http://localhost:3000` origin for writes.
-- Exit codes: `0` clean shutdown, `2` usage/config error, `3` not elevated / capture permission denied, `4` port in use, `1` other.
-- Graceful shutdown on `SIGINT` (POSIX) or `CTRL_BREAK_EVENT` (Windows, process started with `CREATE_NEW_PROCESS_GROUP`): stop capture, flush DB writer, exit `0` within 5 s.
+- Exit codes: `0` clean shutdown, `2` usage/config error, `3` capture permission denied (e.g. Npcap installed admin-only), `4` port in use, `1` other.
+- Graceful shutdown (stop capture, flush DB writer, exit `0` within 5 s) on any of:
+  - `SIGINT`/`SIGTERM`, or `CTRL_BREAK_EVENT` from a process sharing the backend's console;
+  - **stdin reaching EOF, when started with `--exit-on-stdin-close`.** This is how the tray stops the backend: it runs without a console (pythonw), so it can't send Ctrl+Break. It keeps a pipe to the backend's stdin and closes it. If the tray dies, the pipe closes too, so the backend is never orphaned.
 - Ready signal: `GET /api/v1/health` returns 200.

@@ -45,3 +45,22 @@ def test_port_conflict_exits_4(monkeypatch):
         server.listen()
         port = server.getsockname()[1]
         assert cli.main(["--headless", "--port", str(port)]) == cli.EXIT_PORT_IN_USE
+
+
+def test_watch_stdin_fires_on_eof():
+    import os
+    import threading
+
+    read_fd, write_fd = os.pipe()
+    closed = threading.Event()
+    with os.fdopen(read_fd, "rb") as reader:
+        thread = cli.watch_stdin(reader, closed.set)
+        os.write(write_fd, b"still here")
+        assert not closed.wait(0.2)
+        os.close(write_fd)
+        assert closed.wait(2)
+        thread.join(2)
+
+
+def test_exit_on_stdin_close_flag_parses():
+    assert cli.build_parser().parse_args(["--exit-on-stdin-close"]).exit_on_stdin_close

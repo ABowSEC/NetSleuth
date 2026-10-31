@@ -6,11 +6,13 @@ Exit codes follow docs/API_CONTRACT.md:
 """
 from __future__ import annotations
 
+import _thread
 import argparse
 import logging
 import signal
 import socket
 import sys
+import threading
 from ipaddress import ip_address
 
 from . import __version__
@@ -35,6 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dev", action="store_true", help="allow the Next.js dev server origin (localhost:3000)")
     parser.add_argument("--log-file", help="log file path (default <data dir>/logs/netsleuth.log)")
     parser.add_argument("--verbose", "-v", action="store_true", help="debug logging")
+    parser.add_argument("--exit-on-stdin-close", action="store_true",
+                        help="shut down cleanly when stdin closes (used by the tray supervisor)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
@@ -81,13 +85,33 @@ def choose_interface(requested: str | None, available: list[str], headless: bool
 
 
 def _install_shutdown_signals() -> None:
-    # The tray supervisor stops us with CTRL_BREAK on Windows; treat it like Ctrl+C.
+    # Ctrl+Break from a shared console behaves like Ctrl+C.
     def _interrupt(signum, frame):
         raise KeyboardInterrupt
 
     if hasattr(signal, "SIGBREAK"):
         signal.signal(signal.SIGBREAK, _interrupt)
     signal.signal(signal.SIGTERM, _interrupt)
+
+
+def watch_stdin(stream, on_close) -> threading.Thread:
+    """Call ``on_close`` once ``stream`` reaches EOF.
+
+    A supervisor without a console (the tray runs under pythonw) can't send
+    Ctrl+Break, so it holds our stdin open and closes it to stop us. If the
+    supervisor dies, the pipe closes too, so the backend is never orphaned.
+    """
+    def run() -> None:
+        try:
+            while stream.read(1024):
+                pass
+        except (OSError, ValueError):
+            pass
+        on_close()
+
+    thread = threading.Thread(target=run, name="stdin-watch", daemon=True)
+    thread.start()
+    return thread
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -153,6 +177,8 @@ def run(args, settings: Settings, host: str, info) -> int:
     server = Server(app, host, args.port)
 
     _install_shutdown_signals()
+    if args.exit_on_stdin_close and sys.stdin is not None:
+        watch_stdin(sys.stdin.buffer, _thread.interrupt_main)
     pipeline.start()
     discovery.start()
     server.start()
