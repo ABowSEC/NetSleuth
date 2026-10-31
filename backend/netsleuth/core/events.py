@@ -52,9 +52,12 @@ def label(device: Device | None, fallback: str) -> str:
 
 class EventEngine(PipelineObserver):
     def __init__(self, store: DeviceStore, gateway_ip: str | None = None,
-                 clock: Callable[[], float] = time.monotonic, first_run: bool = False):
+                 clock: Callable[[], float] = time.monotonic, first_run: bool = False,
+                 own_mac: str | None = None):
         self.store = store
         self.gateway_ip = gateway_ip
+        # This computer. Its own traffic (including Identify mode's probes) never raises alerts.
+        self.own_mac = own_mac
         self.first_run = first_run
         self._baseline: set[str] = set()
         self._baseline_reported = not first_run
@@ -149,7 +152,7 @@ class EventEngine(PipelineObserver):
             self.emit("left", "info", f"{label(device, device.mac)} left", mac=device.mac)
 
     def on_flow(self, flow: Flow) -> None:
-        if not flow.local or flow.port is None:
+        if not flow.local or flow.port is None or flow.mac == self.own_mac:
             return
         now = self._clock()
         with self._lock:
@@ -186,6 +189,8 @@ class EventEngine(PipelineObserver):
         return (utcnow() - parse_iso(previous_last_seen)).days
 
     def _check_conflict(self, mac: str, ip: str, previous_mac: str, name: str) -> None:
+        if mac == self.own_mac:
+            return  # this computer changing address is not an attack; others claiming its IP still is
         previous = self.store.get(previous_mac)
         previous_name = label(previous, previous_mac)
 
