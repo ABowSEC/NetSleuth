@@ -38,8 +38,3 @@ def default_gateway_ip() -> str | None:
         return None
     return gateway if gateway and gateway != "0.0.0.0" else None
 
-
-def get_gateway_ips() -> set:
-    """Return a best-guess set of gateway IPs for the active network."""
-    gateway = default_gateway_ip()
-    return {gateway} if gateway else set()

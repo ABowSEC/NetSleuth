@@ -11,7 +11,7 @@ import logging
 import signal
 import socket
 import sys
-import threading
+from ipaddress import ip_address
 
 from . import __version__
 from .logging_setup import configure_logging
@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
     log.info("NetSleuth %s starting", __version__)
 
     # Deferred imports: scapy and friends are slow to load and not needed for --help.
-    from .utils.network_utils import get_active_interfaces
+    from .utils.network_utils import get_active_interfaces, interface_info
 
     iface = choose_interface(args.interface, get_active_interfaces(), args.headless)
     if iface is None:
@@ -110,31 +110,80 @@ def main(argv: list[str] | None = None) -> int:
         log.error("Port %d is already in use on %s.", args.port, host)
         return EXIT_PORT_IN_USE
 
-    from .core.sniffer import start_sniffing
-    from .web.web_interface import start_web_interface
+    info = interface_info(iface)
+    if info is None:
+        log.error("Interface %r has no IPv4 address.", iface)
+        return EXIT_USAGE
+
+    return run(args, settings, host, info)
+
+
+def run(args, settings: Settings, host: str, info) -> int:
+    from .core.capture import CaptureError, CapturePermissionError, run_capture
+    from .core.discovery import Discovery
+    from .core.events import EventEngine
+    from .core.legacy import import_legacy
+    from .core.pipeline import Pipeline
+    from .core.store import DeviceStore
+    from .settings import db_path
+    from .utils.network_utils import default_gateway_ip
+    from .web.api import AppContext, Server, create_app, default_static_dir
+
+    gateway = default_gateway_ip()
+    if gateway and ip_address(gateway) not in info.network:
+        gateway = None
+    log.info("Monitoring %s (%s on %s, gateway %s)", info.name, info.ip, info.network, gateway or "unknown")
+
+    store = DeviceStore(db_path())
+    import_legacy(store)
+    store.start()
+    engine = EventEngine(store, gateway)
+    pipeline = Pipeline(
+        store, info.network, gateway, engine,
+        offline_timeout_s=lambda: settings.offline_timeout_s,
+        retention_days=lambda: settings.retention_days,
+    )
+    discovery = Discovery(pipeline, info.name, info.ip, lambda: settings.sweep_interval_s)
+
+    static_dir = default_static_dir()
+    app = create_app(AppContext(
+        store=store, engine=engine, settings=settings, pipeline=pipeline,
+        interface=info.name, dev=args.dev, static_dir=static_dir,
+    ))
+    server = Server(app, host, args.port)
 
     _install_shutdown_signals()
-
-    threading.Thread(
-        target=start_web_interface, kwargs={"host": host, "port": args.port}, daemon=True, name="web"
-    ).start()
+    pipeline.start()
+    discovery.start()
+    server.start()
     log.info("Dashboard at http://%s:%d", "localhost" if host == "127.0.0.1" else host, args.port)
+    if not static_dir.is_dir():
+        log.warning("UI not built (%s missing); only the API is served.", static_dir)
     if host != "127.0.0.1":
         log.warning("Dashboard is reachable from your LAN (bound to %s).", host)
 
+    code = EXIT_OK
     try:
-        start_sniffing(interface=iface, packet_count=0)
+        run_capture(info.name, pipeline.submit)
     except KeyboardInterrupt:
-        log.info("Shutting down.")
-        return EXIT_OK
-    except PermissionError as e:
+        pass
+    except CapturePermissionError as e:
         log.error("Packet capture permission denied: %s", e)
         log.error("Run from an administrator terminal, or reinstall Npcap without admin-only restriction.")
-        return EXIT_PERMISSION
+        code = EXIT_PERMISSION
+    except CaptureError as e:
+        log.error("Capture failed: %s", e)
+        code = EXIT_ERROR
     except Exception:
         log.exception("Capture stopped unexpectedly.")
-        return EXIT_ERROR
-    return EXIT_OK
+        code = EXIT_ERROR
+    finally:
+        log.info("Shutting down.")
+        discovery.stop()
+        pipeline.stop()
+        server.close()
+        store.close()
+    return code
 
 
 if __name__ == "__main__":

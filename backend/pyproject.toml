@@ -12,6 +12,7 @@ dependencies = [
     "scapy==2.6.1",
     "psutil==7.1.3",
     "Flask==3.1.2",
+    "waitress==3.0.2",
     # ML stack moves to an optional extra once the anomaly plugin lands.
     "scikit-learn==1.7.2",
     "joblib==1.5.2",
@@ -26,9 +27,6 @@ netsleuth = "netsleuth.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["netsleuth*"]
-
-[tool.setuptools.package-data]
-netsleuth = ["config/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
