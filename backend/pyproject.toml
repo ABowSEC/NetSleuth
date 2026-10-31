@@ -32,3 +32,4 @@ netsleuth = ["config/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-p no:anyio"
