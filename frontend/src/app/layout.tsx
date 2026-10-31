@@ -1,35 +1,40 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { ThemeProvider } from "../context/ThemeContext";
+import type { Metadata, Viewport } from "next";
+import { AppHeader } from "@/components/AppHeader";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { LiveProvider } from "@/context/LiveContext";
+import { THEME_BOOT_SCRIPT, ThemeProvider } from "@/context/ThemeContext";
+import { ToastProvider } from "@/context/ToastContext";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "NetSleuth",
-  description: "Real-time network monitoring dashboard",
+  description: "What's on your home network, what's new, and what left.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f6f8" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c0f13" },
+  ],
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
-        <ThemeProvider>{children}</ThemeProvider>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body className="min-h-dvh">
+        <ThemeProvider>
+          <ToastProvider>
+            <LiveProvider>
+              <AppHeader />
+              <main className="mx-auto max-w-6xl px-4 pb-16 pt-6">
+                <ErrorBoundary>{children}</ErrorBoundary>
+              </main>
+            </LiveProvider>
+          </ToastProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

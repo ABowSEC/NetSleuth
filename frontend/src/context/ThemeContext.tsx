@@ -1,42 +1,76 @@
-"use client"
-import { createContext, useContext, useEffect, useState } from "react"
-import type { Theme } from "../lib/types"
+"use client";
 
-interface ThemeContextValue {
-  theme: Theme
-  setTheme: (t: Theme) => void
+import { createContext, useCallback, useContext, useEffect, useSyncExternalStore } from "react";
+
+export type ThemeMode = "light" | "dark" | "system";
+
+export const THEME_STORAGE_KEY = "netsleuth_theme";
+
+/**
+ * Runs in <head> before first paint so the page never flashes the wrong theme.
+ * Kept as a string because it executes before React loads.
+ */
+export const THEME_BOOT_SCRIPT = `(function(){try{var m=localStorage.getItem("${THEME_STORAGE_KEY}");
+var d=m==="dark"||(m!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);
+document.documentElement.dataset.theme=d?"dark":"light";}catch(e){document.documentElement.dataset.theme="light";}})();`;
+
+interface ThemeState {
+  mode: ThemeMode;
+  setMode: (mode: ThemeMode) => void;
 }
 
-const ThemeContext = createContext<ThemeContextValue>({ theme: "system", setTheme: () => {} })
+const ThemeContext = createContext<ThemeState>({ mode: "system", setMode: () => {} });
+
+// The stored preference is an external store: localStorage, shared across tabs.
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+function readMode(): ThemeMode {
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    return stored === "light" || stored === "dark" ? stored : "system";
+  } catch {
+    return "system";
+  }
+}
+
+function apply(mode: ThemeMode) {
+  const dark = mode === "dark" || (mode === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("system")
-  const [mounted, setMounted]  = useState(false)
+  const mode = useSyncExternalStore(subscribe, readMode, () => "system" as const);
 
   useEffect(() => {
-    setMounted(true)
-    const stored = localStorage.getItem("netsleuth_theme") as Theme | null
-    if (stored) setThemeState(stored)
-  }, [])
+    apply(mode);
+    if (mode !== "system") return;
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => apply("system");
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [mode]);
 
-  useEffect(() => {
-    if (!mounted) return
-    const root = document.documentElement
-    if (theme === "dark")  root.setAttribute("data-theme", "dark")
-    else if (theme === "light") root.setAttribute("data-theme", "light")
-    else root.removeAttribute("data-theme")
-  }, [theme, mounted])
+  const setMode = useCallback((next: ThemeMode) => {
+    try {
+      if (next === "system") localStorage.removeItem(THEME_STORAGE_KEY);
+      else localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch {
+      // Storage unavailable (private mode): fall back to applying it for this page only.
+      apply(next);
+    }
+    listeners.forEach((l) => l());
+  }, []);
 
-  const setTheme = (t: Theme) => {
-    setThemeState(t)
-    localStorage.setItem("netsleuth_theme", t)
-  }
-
-  return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  )
+  return <ThemeContext.Provider value={{ mode, setMode }}>{children}</ThemeContext.Provider>;
 }
 
-export const useTheme = () => useContext(ThemeContext)
+export const useTheme = () => useContext(ThemeContext);
