@@ -128,6 +128,7 @@ class Observation:
     came_online: bool                  # was offline (or new) until now
     previous_ip: str | None = None     # set when the device's current IP changed
     ip_taken_from: str | None = None   # MAC that previously held this IP
+    previous_last_seen: str | None = None  # last sighting before this one
 
 
 class DeviceStore:
@@ -230,6 +231,7 @@ class DeviceStore:
                                 vendor=vendor, type=classify(None, vendor))
                 self._devices[mac] = device
 
+            previous_last_seen = None if is_new else device.last_seen
             device.last_seen = max(device.last_seen, stamp)
             came_online = not device.online
             if came_online:
@@ -252,7 +254,7 @@ class DeviceStore:
                 self._dirty_ips[(mac, ip)] = stamp
 
             self._dirty_devices.add(mac)
-            return Observation(is_new, came_online, previous_ip, ip_taken_from)
+            return Observation(is_new, came_online, previous_ip, ip_taken_from, previous_last_seen)
 
     def set_hostname(self, mac: str, hostname: str) -> None:
         hostname = hostname.strip()
