@@ -5,11 +5,11 @@ from scapy.layers.inet import IP, TCP, UDP
 
 from .analyzer import analyze_packet
 
-from src.ml.feature_extractor import extract_features, as_vector
-from src.ml.model_manager import TrafficAnomalyModel
+from netsleuth.ml.feature_extractor import extract_features, as_vector
+from netsleuth.ml.model_manager import TrafficAnomalyModel
 
-from src.core.anomaly_store import anomaly_store, AnomalyEvent
-from src.core.suspicious_devices import suspicious_tracker
+from netsleuth.core.anomaly_store import anomaly_store, AnomalyEvent
+from netsleuth.core.suspicious_devices import suspicious_tracker
 
 from datetime import datetime
 

@@ -5,10 +5,7 @@ from collections import OrderedDict
 from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.packet import Packet, Raw
 
-try:
-    from config import ML_LAST_SEEN_MAX
-except ImportError:
-    ML_LAST_SEEN_MAX = 2000
+from ..constants import ML_LAST_SEEN_MAX
 
 # Bounded OrderedDict: evicts oldest entry when cap is reached
 _last_seen: OrderedDict = OrderedDict()

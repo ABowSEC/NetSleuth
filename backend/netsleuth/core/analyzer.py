@@ -27,11 +27,7 @@ def _is_local(ip: str) -> bool:
     except ValueError:
         return False
 
-try:
-    from config import VERBOSE, DEBUG_MODE
-except ImportError:
-    VERBOSE = False
-    DEBUG_MODE = False
+from ..constants import VERBOSE, DEBUG_MODE
 
 logger = logging.getLogger(__name__)
 

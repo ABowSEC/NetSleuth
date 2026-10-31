@@ -5,16 +5,11 @@ from .alert_system import alert_system
 from .persistence import load_devices, save_device
 from .known_registry import is_known, get_name
 
-try:
-    from config import (
-        MAX_CONNECTIONS_PER_DEVICE,
-        MAX_DNS_QUERIES_PER_DEVICE,
-        DEVICE_STALE_HOURS,
-    )
-except ImportError:
-    MAX_CONNECTIONS_PER_DEVICE = 100
-    MAX_DNS_QUERIES_PER_DEVICE = 50
-    DEVICE_STALE_HOURS = 24
+from ..constants import (
+    MAX_CONNECTIONS_PER_DEVICE,
+    MAX_DNS_QUERIES_PER_DEVICE,
+    DEVICE_STALE_HOURS,
+)
 
 # Global device activity log — pre-populated from persistent storage
 device_log = load_devices()

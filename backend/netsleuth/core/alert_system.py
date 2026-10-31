@@ -7,16 +7,11 @@ from ..utils.network_utils import get_gateway_ips
 
 _GATEWAY_IPS = get_gateway_ips()
 
-try:
-    from config import (
-        ALERT_HIGH_CONNECTION_THRESHOLD,
-        ALERT_PORT_SCAN_THRESHOLD,
-        ALERTS_PANEL_LIMIT,
-    )
-except ImportError:
-    ALERT_HIGH_CONNECTION_THRESHOLD = 50
-    ALERT_PORT_SCAN_THRESHOLD = 20
-    ALERTS_PANEL_LIMIT = 50
+from ..constants import (
+    ALERT_HIGH_CONNECTION_THRESHOLD,
+    ALERT_PORT_SCAN_THRESHOLD,
+    ALERTS_PANEL_LIMIT,
+)
 
 class AlertSystem:
     """Network monitoring alert system for security and performance events"""

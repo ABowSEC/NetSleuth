@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netsleuth"
+version = "0.2.0"
+description = "Local home-network device tracker"
+readme = "../README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "scapy==2.6.1",
+    "psutil==7.1.3",
+    "Flask==3.1.2",
+    # ML stack moves to an optional extra once the anomaly plugin lands.
+    "scikit-learn==1.7.2",
+    "joblib==1.5.2",
+    "numpy==2.3.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+netsleuth = "netsleuth.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["netsleuth*"]
+
+[tool.setuptools.package-data]
+netsleuth = ["config/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

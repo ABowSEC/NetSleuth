@@ -8,13 +8,9 @@ import threading
 import time
 from datetime import datetime
 
-from src.core.anomaly_store import anomaly_store
+from netsleuth.core.anomaly_store import anomaly_store
 
-try:
-    from config import WEB_UPDATE_INTERVAL, ALERTS_PANEL_LIMIT
-except ImportError:
-    WEB_UPDATE_INTERVAL = 5
-    ALERTS_PANEL_LIMIT = 50
+from ..constants import WEB_UPDATE_INTERVAL, ALERTS_PANEL_LIMIT
 
 
 app = Flask(__name__)

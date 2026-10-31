@@ -57,7 +57,7 @@ build/
 *.swp
 
 # Personal data / local artifacts (never commit real network data)
-backend/src/config/known_devices.json
+backend/netsleuth/config/known_devices.json
 netsleuth_export_*.json
 *.pptx
 *.pdf

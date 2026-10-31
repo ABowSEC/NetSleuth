@@ -1,12 +1,7 @@
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-try:
-    from config import SUSPICIOUS_SCORE_LOW, SUSPICIOUS_SCORE_MEDIUM, SUSPICIOUS_SCORE_HIGH
-except ImportError:
-    SUSPICIOUS_SCORE_LOW    = -0.15
-    SUSPICIOUS_SCORE_MEDIUM = -0.35
-    SUSPICIOUS_SCORE_HIGH   = -0.60
+from ..constants import SUSPICIOUS_SCORE_LOW, SUSPICIOUS_SCORE_MEDIUM, SUSPICIOUS_SCORE_HIGH
 
 class SuspiciousDeviceTracker:
     SEVERITY_RANK = {

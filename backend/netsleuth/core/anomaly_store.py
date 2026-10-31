@@ -2,10 +2,7 @@ from collections import deque
 from dataclasses import dataclass, asdict
 from typing import Deque, Dict, Any, List
 
-try:
-    from config import ML_ANOMALY_STORE_MAXLEN
-except ImportError:
-    ML_ANOMALY_STORE_MAXLEN = 500
+from ..constants import ML_ANOMALY_STORE_MAXLEN
 
 
 @dataclass
