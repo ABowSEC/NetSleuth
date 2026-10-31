@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:mock": "node --env-file=.env.mock node_modules/next/dist/bin/next dev",
+    "dev:mock": "node scripts/dev-mock.mjs",
     "build": "next build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

@@ -6,7 +6,7 @@ Next.js 16 app, exported as static files (`out/`) that the NetSleuth backend ser
 
 | Command | What it does |
 |---|---|
-| `npm run dev:mock` | Dev server on :3000 with a built-in fake API. No backend needed. |
+| `npm run dev:mock` | Dev server on :3000 with a built-in fake API (`scripts/dev-mock.mjs`). No backend needed. |
 | `npm run dev` | Dev server on :3000 that proxies `/api` to `BACKEND_URL` (default `http://localhost:5000`). Start the backend with `--dev` so it accepts changes from :3000. |
 | `npm run build` | Static export to `out/`. The backend picks it up automatically. |
 | `npm run check` | Type check, lint and unit tests. |
