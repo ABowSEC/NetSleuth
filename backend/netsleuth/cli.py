@@ -117,7 +117,9 @@ def watch_stdin(stream, on_close) -> threading.Thread:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     log_file = args.log_file or (log_dir() / "netsleuth.log")
-    configure_logging("DEBUG" if args.verbose else "INFO", log_file=log_file)
+    # Headless runs are supervised: the log file is the record, and stderr is kept
+    # for crashes only (the tray saves it to backend-stderr.log).
+    configure_logging("DEBUG" if args.verbose else "INFO", log_file=log_file, console=not args.headless)
 
     settings = Settings.load()
     host = args.host or ("0.0.0.0" if settings.lan_exposure else "127.0.0.1")
