@@ -16,11 +16,16 @@ import type { Settings } from "@/lib/types";
 const OFFLINE_OPTIONS = [300, 600, 1800, 3600];
 const SWEEP_OPTIONS = [60, 300, 900, 3600];
 const RETENTION_OPTIONS = [7, 30, 90, 365];
+const IDENTIFY_OPTIONS = [5, 10, 20];
 
 function savedMessage(patch: Partial<Settings>): string {
   if (patch.offline_timeout_s !== undefined) return `Devices now count as away after ${duration(patch.offline_timeout_s)} of silence.`;
   if (patch.sweep_interval_s !== undefined) return `The network is now scanned every ${duration(patch.sweep_interval_s)}.`;
   if (patch.retention_days !== undefined) return `History is now kept for ${duration(patch.retention_days * 86400)}.`;
+  if (patch.identify_minutes !== undefined) return `Identify mode now stops after at most ${duration(patch.identify_minutes * 60)}.`;
+  if (patch.port_check !== undefined) {
+    return patch.port_check ? "Identify mode will also check common ports." : "Identify mode will only use discovery questions.";
+  }
   if (patch.lan_exposure !== undefined) {
     return patch.lan_exposure
       ? "Saved. Restart NetSleuth, then open it from another device using this computer's IP address."
@@ -80,6 +85,34 @@ export default function SettingsPage() {
           />
         </Row>
       </Card>
+
+      <section className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Identification</h2>
+        <Card className="divide-y divide-border">
+          <Row
+            title="Identify mode runs for at most"
+            hint="It asks each device what it is, then switches itself off when done or when this time is up."
+          >
+            <Select
+              value={settings?.identify_minutes}
+              options={IDENTIFY_OPTIONS}
+              format={(minutes) => duration(minutes * 60)}
+              onChange={(v) => update({ identify_minutes: v })}
+            />
+          </Row>
+          <Row
+            title="Also check common ports"
+            hint="Identify mode also checks 13 common ports on each device and reads its web page title. More accurate for printers, cameras and iPhones, but security software may see it as a port scan."
+          >
+            <Switch
+              checked={settings?.port_check ?? false}
+              disabled={!settings}
+              onChange={(on) => update({ port_check: on })}
+              label="Also check common ports during Identify mode"
+            />
+          </Row>
+        </Card>
+      </section>
 
       <Card className="divide-y divide-border">
         <NotificationsRow />

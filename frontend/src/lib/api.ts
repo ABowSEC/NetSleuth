@@ -1,10 +1,10 @@
 import {
-  toDeviceDetail, toDevice, toDevices, toEvents, toHealth, toSettings, toSummary,
+  toDeviceDetail, toDevice, toDevices, toEvents, toHealth, toIdentify, toSettings, toSummary,
 } from "./guards";
 import { ApiError } from "./errors";
 import { mockApi } from "./mock";
 import type {
-  Device, DeviceDetail, DevicePatch, EventKind, Health, NetEvent, Settings, Summary,
+  Device, DeviceDetail, DevicePatch, EventKind, Health, IdentifyStatus, NetEvent, Settings, Summary,
 } from "./types";
 
 export { ApiError };
@@ -70,6 +70,9 @@ export interface Api {
   resume(): Promise<Health>;
   settings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
+  identify(): Promise<IdentifyStatus>;
+  startIdentify(options?: { minutes?: number; macs?: string[] }): Promise<IdentifyStatus>;
+  stopIdentify(): Promise<IdentifyStatus>;
   exportUrl: string;
   streamUrl: string | null;
 }
@@ -90,6 +93,9 @@ const httpApi: Api = {
   resume: async () => toHealth(await write("POST", "/capture/resume")),
   settings: async () => toSettings(await request("/settings")),
   updateSettings: async (patch) => toSettings(await write("PATCH", "/settings", patch)),
+  identify: async () => toIdentify(await request("/identify")),
+  startIdentify: async (options = {}) => toIdentify(await write("POST", "/identify/start", options)),
+  stopIdentify: async () => toIdentify(await write("POST", "/identify/stop")),
   exportUrl: `${BASE}/events/export`,
   streamUrl: `${BASE}/stream`,
 };

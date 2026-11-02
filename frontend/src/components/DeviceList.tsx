@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { DeviceIcon } from "./DeviceIcon";
 import { Button } from "./ui";
 import { displayName, relativeTime, shortVendor, TYPE_LABELS } from "@/lib/format";
 import type { Device } from "@/lib/types";
 
+/** "Roku Ultra · TV / streaming", or "Roku · TV / streaming" / "Android 14 · Phone" before identification. */
 function describe(d: Device): string {
-  return [d.vendor && shortVendor(d.vendor), d.type !== "unknown" && TYPE_LABELS[d.type]].filter(Boolean).join(" · ");
+  return [
+    d.model ?? (d.vendor && shortVendor(d.vendor)),
+    d.type !== "unknown" && TYPE_LABELS[d.type],
+    !d.model && d.os,
+  ].filter(Boolean).join(" · ");
 }
 
 function Glyph({ device }: { device: Device }) {
@@ -72,7 +77,10 @@ function Newcomer({ device: d, busy, onOpen, onName, onApprove }: {
   onApprove: (mac: string) => void;
 }) {
   const [name, setName] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const facts = [describe(d), d.ips[0]].filter(Boolean);
+  const looksLike = d.model ?? d.suggested_name;
+  const suggestion = d.suggested_name ?? d.model;
 
   return (
     <li className="px-4 py-3">
@@ -90,6 +98,30 @@ function Newcomer({ device: d, busy, onOpen, onName, onApprove }: {
             {" · "}
             {d.online ? <span className="text-ok">here now</span> : `last seen ${relativeTime(d.last_seen)}`}
           </p>
+          {looksLike && (
+            <p className="mt-1.5 text-sm">
+              Looks like <strong className="font-semibold">{looksLike}</strong>
+              {d.suggested_name && d.model && d.suggested_name !== d.model && (
+                <span className="text-muted">, calls itself &quot;{d.suggested_name}&quot;</span>
+              )}
+              {suggestion && name !== suggestion && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setName(suggestion);
+                      inputRef.current?.focus();
+                    }}
+                    className="text-muted underline decoration-border underline-offset-2 hover:text-text"
+                  >
+                    Use this name
+                  </button>
+                </>
+              )}
+            </p>
+          )}
 
           <form
             className="mt-2.5 flex flex-wrap gap-2"
@@ -99,6 +131,7 @@ function Newcomer({ device: d, busy, onOpen, onName, onApprove }: {
             }}
           >
             <input
+              ref={inputRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={64}

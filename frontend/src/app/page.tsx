@@ -4,9 +4,11 @@ import { Fragment, Suspense, useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DeviceDrawer } from "@/components/DeviceDrawer";
 import { DeviceRows, NewcomerList } from "@/components/DeviceList";
-import { Card, EmptyLine, ErrorNotice, GroupHeading } from "@/components/ui";
+import { IdentifyStrip } from "@/components/IdentifyStrip";
+import { Button, Card, EmptyLine, ErrorNotice, GroupHeading } from "@/components/ui";
 import { useLive } from "@/context/LiveContext";
 import { useToast } from "@/context/ToastContext";
+import { useIdentify } from "@/hooks/useIdentify";
 import { useResource } from "@/hooks/useResource";
 import { api } from "@/lib/api";
 import { groupDevices } from "@/lib/devices";
@@ -27,6 +29,7 @@ function DevicesView() {
   const pathname = usePathname();
   const toast = useToast();
   const { health } = useLive();
+  const identify = useIdentify();
 
   const openMac = params.get("device");
   const [query, setQuery] = useState("");
@@ -75,20 +78,35 @@ function DevicesView() {
 
   return (
     <div className="space-y-8">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          <span className="tabular-nums">{online}</span> {online === 1 ? "device" : "devices"} on your network right now
-        </h1>
-        <p className="text-sm text-muted">
-          {[
-            unrecognised > 0 && <span className="text-warn">{unrecognised} not recognised yet</span>,
-            away > 0 && `${away} away`,
-            health?.interface && `watching ${health.interface}`,
-          ].filter(Boolean).map((part, i) => (
-            <Fragment key={i}>{i > 0 && " · "}{part}</Fragment>
-          ))}
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            <span className="tabular-nums">{online}</span> {online === 1 ? "device" : "devices"} on your network right now
+          </h1>
+          <p className="text-sm text-muted">
+            {[
+              unrecognised > 0 && <span className="text-warn">{unrecognised} not recognised yet</span>,
+              away > 0 && `${away} away`,
+              health?.interface && `watching ${health.interface}`,
+            ].filter(Boolean).map((part, i) => (
+              <Fragment key={i}>{i > 0 && " · "}{part}</Fragment>
+            ))}
+          </p>
+        </div>
+        {!identify.status.running && devices.length > 0 && (
+          <Button
+            onClick={() => identify.start()}
+            disabled={identify.pending}
+            title="Asks each device what it is, then switches itself off"
+          >
+            Identify my devices
+          </Button>
+        )}
       </header>
+
+      {identify.status.running && (
+        <IdentifyStrip status={identify.status} pending={identify.pending} onStop={identify.stop} />
+      )}
 
       {error && <ErrorNotice message={error} onRetry={reload} />}
 
@@ -116,7 +134,19 @@ function DevicesView() {
 
       {groups.unrecognised.length > 0 && (
         <section>
-          <GroupHeading count={groups.unrecognised.length} tone="text-warn">Haven&apos;t met these yet</GroupHeading>
+          <div className="flex items-baseline justify-between gap-3">
+            <GroupHeading count={groups.unrecognised.length} tone="text-warn">Haven&apos;t met these yet</GroupHeading>
+            {!identify.status.running && groups.unrecognised.some((d) => d.online) && (
+              <button
+                type="button"
+                disabled={identify.pending}
+                onClick={() => identify.start(groups.unrecognised.filter((d) => d.online).map((d) => d.mac))}
+                className="text-xs text-muted underline decoration-border underline-offset-2 hover:text-text"
+              >
+                Identify these
+              </button>
+            )}
+          </div>
           <Card className="border-warn/40">
             <NewcomerList
               devices={groups.unrecognised}

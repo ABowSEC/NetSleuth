@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toDevice, toDevices, toEvent, toSettings } from "./guards";
+import { toDevice, toDeviceDetail, toDevices, toEvent, toIdentify, toSettings } from "./guards";
 
 describe("toDevice", () => {
   it("keeps well-formed fields", () => {
@@ -39,5 +39,31 @@ it("toEvent falls back to safe kind and severity", () => {
 it("toSettings fills defaults", () => {
   expect(toSettings({ sweep_interval_s: 60 })).toEqual({
     offline_timeout_s: 600, sweep_interval_s: 60, retention_days: 30, lan_exposure: false, anomaly_plugin: false,
+    port_check: false, identify_minutes: 10,
   });
+});
+
+it("device identification fields default to null", () => {
+  const d = toDevice({ mac: "m" });
+  expect([d.model, d.os, d.suggested_name]).toEqual([null, null, null]);
+});
+
+it("detail evidence and suggestion are shaped defensively", () => {
+  const detail = toDeviceDetail({
+    mac: "m",
+    evidence: [{ source: "upnp", key: "modelName", value: "Roku Ultra", confidence: 1 }, { source: "x", key: "", value: "" }, 5],
+    suggestion: { name: "Bedroom Roku", model: 7, type: "tv" },
+  });
+  expect(detail.evidence).toEqual([
+    { source: "upnp", key: "modelName", value: "Roku Ultra", confidence: 1, last_seen: "" },
+  ]);
+  expect(detail.suggestion).toEqual({ name: "Bedroom Roku", model: null, os: null, type: "tv" });
+  expect(toDeviceDetail({ mac: "m", suggestion: null }).suggestion).toBeNull();
+});
+
+it("identify status defaults to idle", () => {
+  expect(toIdentify(null)).toEqual({
+    running: false, started_at: null, ends_at: null, done: 0, total: 0, current: null, port_check: false,
+  });
+  expect(toIdentify({ running: true, done: 3, total: 9 })).toMatchObject({ running: true, done: 3, total: 9 });
 });

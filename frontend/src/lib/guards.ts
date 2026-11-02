@@ -2,9 +2,9 @@
 // default instead of crashing the page (the old UI died on a non-string hostname).
 
 import {
-  DEVICE_TYPES, EVENT_KINDS, SEVERITIES,
-  type Device, type DeviceDetail, type DeviceType, type EventKind, type Health,
-  type NetEvent, type Settings, type Severity, type Summary,
+  DEVICE_TYPES, EVENT_KINDS, EVIDENCE_SOURCES, SEVERITIES,
+  type Device, type DeviceDetail, type DeviceType, type EventKind, type EvidenceSource, type Health,
+  type IdentifyStatus, type NetEvent, type Settings, type Severity, type Summary,
 } from "./types";
 
 type Obj = Record<string, unknown>;
@@ -32,6 +32,9 @@ export function toDevice(raw: unknown): Device {
     first_seen: str(d.first_seen),
     last_seen: str(d.last_seen),
     notes: optStr(d.notes),
+    model: optStr(d.model),
+    os: optStr(d.os),
+    suggested_name: optStr(d.suggested_name),
   };
 }
 
@@ -60,6 +63,42 @@ export function toDeviceDetail(raw: unknown): DeviceDetail {
       const o = obj(x);
       return { start: str(o.start), end: optStr(o.end) };
     }),
+    evidence: arr(d.evidence)
+      .map((x) => {
+        const o = obj(x);
+        return {
+          source: oneOf<EvidenceSource>(o.source, EVIDENCE_SOURCES, "ssdp"),
+          key: str(o.key),
+          value: str(o.value),
+          confidence: num(o.confidence, 1),
+          last_seen: str(o.last_seen),
+        };
+      })
+      .filter((e) => e.key && e.value),
+    suggestion: d.suggestion && typeof d.suggestion === "object"
+      ? (() => {
+        const s = obj(d.suggestion);
+        return {
+          name: optStr(s.name),
+          model: optStr(s.model),
+          os: optStr(s.os),
+          type: oneOf<DeviceType>(s.type, DEVICE_TYPES, "unknown"),
+        };
+      })()
+      : null,
+  };
+}
+
+export function toIdentify(raw: unknown): IdentifyStatus {
+  const s = obj(raw);
+  return {
+    running: bool(s.running),
+    started_at: optStr(s.started_at),
+    ends_at: optStr(s.ends_at),
+    done: num(s.done),
+    total: num(s.total),
+    current: optStr(s.current),
+    port_check: bool(s.port_check),
   };
 }
 
@@ -109,5 +148,7 @@ export function toSettings(raw: unknown): Settings {
     retention_days: num(s.retention_days, 30),
     lan_exposure: bool(s.lan_exposure),
     anomaly_plugin: bool(s.anomaly_plugin),
+    port_check: bool(s.port_check),
+    identify_minutes: num(s.identify_minutes, 10),
   };
 }

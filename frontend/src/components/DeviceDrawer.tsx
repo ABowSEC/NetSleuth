@@ -5,8 +5,10 @@ import { DeviceIcon } from "./DeviceIcon";
 import { PresenceStrip } from "./PresenceStrip";
 import { Button, ErrorNotice, StatusDot } from "./ui";
 import { useToast } from "@/context/ToastContext";
+import { useIdentify } from "@/hooks/useIdentify";
 import { useResource } from "@/hooks/useResource";
 import { api } from "@/lib/api";
+import { describeEvidence } from "@/lib/evidence";
 import { dateTime, displayName, relativeTime, TYPE_LABELS } from "@/lib/format";
 import type { Device, DeviceDetail } from "@/lib/types";
 
@@ -19,6 +21,7 @@ interface Props {
 
 export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
   const toast = useToast();
+  const identify = useIdentify();
   const load = useCallback((signal: AbortSignal) => api.device(mac, signal), [mac]);
   const { data: device, error, loading, reload, setData } = useResource<DeviceDetail>(`device:${mac}`, load, 60_000);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -87,10 +90,22 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
             <>
               {!device.is_known && (
                 <div className="rounded-lg border border-warn/40 p-4">
-                  <p className="font-medium">Not sure what this is?</p>
+                  <p className="font-medium">
+                    {device.model ?? device.suggested_name
+                      ? <>Looks like {device.model ? "a" : ""} <strong>{device.model ?? device.suggested_name}</strong></>
+                      : "Not sure what this is?"}
+                  </p>
                   <p className="mt-1 text-sm text-muted">{identifyHint(device)}</p>
-                  <div className="mt-3 flex gap-2">
-                    <Button variant="primary" size="sm" onClick={() => save({ is_known: true }, `${displayName(device)} is marked as yours.`)}>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {device.suggested_name && device.suggested_name !== device.name && (
+                      <Button variant="primary" size="sm" onClick={() => save(
+                        { name: device.suggested_name, is_known: true }, `Saved as "${device.suggested_name}".`,
+                      )}>
+                        Name it &quot;{device.suggested_name}&quot;
+                      </Button>
+                    )}
+                    <Button variant={device.suggested_name ? "secondary" : "primary"} size="sm"
+                      onClick={() => save({ is_known: true }, `${displayName(device)} is marked as yours.`)}>
                       It&apos;s mine
                     </Button>
                   </div>
@@ -102,6 +117,8 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
               <Section title="Details">
                 <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-2 text-sm">
                   <Fact label="Type">{TYPE_LABELS[device.type]}</Fact>
+                  {device.model && <Fact label="Model">{device.model}</Fact>}
+                  {device.os && <Fact label="Software">{device.os}</Fact>}
                   <Fact label="Maker">{device.vendor ?? <span className="text-muted">Unknown{isRandomized(device.mac) ? " (private Wi-Fi address)" : ""}</span>}</Fact>
                   <Fact label="Hostname">{device.hostname ?? <span className="text-muted">Not reported</span>}</Fact>
                   <Fact label="MAC address"><span className="font-mono">{device.mac}</span></Fact>
@@ -116,6 +133,21 @@ export function DeviceDrawer({ mac, onClose, onChanged, onForgotten }: Props) {
                   <Fact label="First seen">{dateTime(device.first_seen)}</Fact>
                   <Fact label="Last seen">{dateTime(device.last_seen)}</Fact>
                 </dl>
+              </Section>
+
+              <Section title="How NetSleuth knows">
+                <EvidenceList device={device} />
+                <div className="mt-3">
+                  {identify.status.running ? (
+                    <p className="text-xs text-muted">Identify mode is running ({identify.status.done} of {identify.status.total}).</p>
+                  ) : device.online ? (
+                    <Button size="sm" disabled={identify.pending} onClick={() => identify.start([device.mac])}>
+                      {device.evidence.length ? "Identify again" : "Identify this device"}
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted">It can be identified the next time it&apos;s on the network.</p>
+                  )}
+                </div>
               </Section>
 
               <Section title="On the network this week">
@@ -276,8 +308,33 @@ function isRandomized(mac: string): boolean {
   return (parseInt(mac.slice(0, 2), 16) & 0x02) === 0x02;
 }
 
+function EvidenceList({ device }: { device: DeviceDetail }) {
+  const lines = describeEvidence(device.evidence);
+  if (!lines.length) {
+    return (
+      <p className="text-sm text-muted">
+        Only its maker, from the first half of its MAC address. Identify mode asks the device directly what it is.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-1.5 text-sm">
+      {lines.map((line, i) => (
+        <li key={i} className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <span>{line.text}</span>
+          <span className="text-xs text-muted">{line.via}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Concrete next step for identifying an unknown device, based on what we know about it. */
-export function identifyHint(d: Pick<Device, "mac" | "vendor" | "hostname">): string {
+export function identifyHint(d: Pick<Device, "mac" | "vendor" | "hostname"> & Partial<Pick<Device, "model" | "suggested_name">>): string {
+  if (d.model || d.suggested_name) {
+    return "That's what the device said about itself when asked. If it matches something in your home, "
+      + "name it or mark it as yours.";
+  }
   if (isRandomized(d.mac)) {
     return `${d.mac} is a private Wi-Fi address, which phones, tablets and some laptops use by default. `
       + "On each phone, open the Wi-Fi network's details and compare the address shown there.";

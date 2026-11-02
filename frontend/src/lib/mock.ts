@@ -4,7 +4,9 @@
 
 import type { Api } from "./api";
 import { ApiError } from "./errors";
-import type { Device, DeviceDetail, NetEvent, Settings, Summary } from "./types";
+import type {
+  Device, DeviceDetail, EvidenceItem, IdentifyStatus, NetEvent, Settings, Summary,
+} from "./types";
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
@@ -14,7 +16,7 @@ function seedDevices(): Device[] {
   ): Device => ({
     mac, name: null, hostname: null, vendor: null, type: "unknown", is_known: false,
     online: lastSeenMin < 10, ips: [ip], first_seen: minutesAgo(firstSeenMin),
-    last_seen: minutesAgo(lastSeenMin), notes: null, ...partial,
+    last_seen: minutesAgo(lastSeenMin), notes: null, model: null, os: null, suggested_name: null, ...partial,
   });
   return [
     d("02:00:00:00:00:01", "192.168.1.1", { vendor: "Example Networks", type: "router", name: "Router", is_known: true }),
@@ -47,12 +49,62 @@ function seedEvents(): NetEvent[] {
   ];
 }
 
+const IDLE: IdentifyStatus = {
+  running: false, started_at: null, ends_at: null, done: 0, total: 0, current: null, port_check: false,
+};
+
+const clue = (source: EvidenceItem["source"], key: string, value: string): EvidenceItem =>
+  ({ source, key, value, confidence: 1, last_seen: minutesAgo(0) });
+
+/** What a simulated Identify run "learns" about some of the fake devices. */
+const LEARNED: Record<string, Pick<Device, "model" | "os" | "suggested_name" | "type"> & { evidence: EvidenceItem[] }> = {
+  "02:00:00:00:00:12": {
+    type: "tv", model: "Roku Ultra", os: null, suggested_name: "Living Room Roku",
+    evidence: [clue("upnp", "friendlyName", "Living Room Roku"), clue("upnp", "modelName", "Roku Ultra"),
+      clue("upnp", "manufacturer", "Roku"), clue("ssdp", "server", "Roku/12.5.0 UPnP/1.0")],
+  },
+  "02:00:00:00:00:14": {
+    type: "speaker", model: "Echo Dot", os: null, suggested_name: "Kitchen Echo",
+    evidence: [clue("mdns", "service:_spotify-connect._tcp", "_spotify-connect._tcp"),
+      clue("mdns", "txt:fn", "Kitchen Echo"), clue("mdns", "txt:md", "Echo Dot")],
+  },
+  "02:00:00:00:00:17": {
+    type: "phone", model: null, os: "Android 14", suggested_name: null,
+    evidence: [clue("dhcp", "vendor_class", "android-dhcp-14")],
+  },
+};
+
 const state = {
   devices: seedDevices(),
   events: seedEvents(),
   capturing: true,
-  settings: { offline_timeout_s: 600, sweep_interval_s: 300, retention_days: 30, lan_exposure: false, anomaly_plugin: false } as Settings,
+  settings: {
+    offline_timeout_s: 600, sweep_interval_s: 300, retention_days: 30, lan_exposure: false, anomaly_plugin: false,
+    port_check: false, identify_minutes: 10,
+  } as Settings,
+  identify: { ...IDLE },
+  evidence: {} as Record<string, EvidenceItem[]>,
+  timer: undefined as ReturnType<typeof setInterval> | undefined,
 };
+
+function finishIdentify(targets: Device[], reason: string | null) {
+  clearInterval(state.timer);
+  const learned = targets.filter((d) => LEARNED[d.mac] && state.identify.done > targets.indexOf(d));
+  for (const device of learned) {
+    const { evidence, ...identity } = LEARNED[device.mac];
+    Object.assign(device, identity);
+    state.evidence[device.mac] = evidence;
+  }
+  const examples = learned.map((d) => d.model ?? d.suggested_name).filter(Boolean).join(", ");
+  state.events.unshift({
+    id: Math.max(0, ...state.events.map((e) => e.id)) + 1,
+    ts: minutesAgo(0), kind: "identified", severity: "info", mac: null,
+    message: `Identify finished: learned more about ${learned.length} of ${targets.length} devices`
+      + (examples ? ` (${examples}).` : ".") + (reason ? ` It ended early because ${reason}.` : ""),
+    data: { total: targets.length, checked: state.identify.done, reason },
+  });
+  state.identify = { ...IDLE };
+}
 
 const delay = <T,>(value: T): Promise<T> => new Promise((r) => setTimeout(() => r(structuredClone(value)), 120));
 
@@ -103,6 +155,10 @@ export const mockApi: Api = {
         { address: "198.51.100.7", port: 123, count: 48, last_seen: minutesAgo(12) },
       ],
       presence: presence(device),
+      evidence: state.evidence[device.mac] ?? [],
+      suggestion: device.model || device.suggested_name || device.os
+        ? { name: device.suggested_name, model: device.model, os: device.os, type: device.type }
+        : null,
     });
   },
   updateDevice: async (mac, patch) => {
@@ -135,6 +191,30 @@ export const mockApi: Api = {
   updateSettings: async (patch) => {
     state.settings = { ...state.settings, ...patch };
     return delay(state.settings);
+  },
+  identify: () => delay(state.identify),
+  startIdentify: async (options = {}) => {
+    if (state.identify.running) throw new ApiError(409, "already_running", "Identify mode is already running.");
+    if (!state.capturing) throw new ApiError(423, "monitoring_paused", "Resume monitoring before identifying devices.");
+    const minutes = options.minutes ?? state.settings.identify_minutes;
+    const targets = state.devices.filter((d) => d.online && (!options.macs || options.macs.includes(d.mac)));
+    const started = new Date();
+    state.identify = {
+      running: true, started_at: started.toISOString(), ends_at: new Date(started.getTime() + minutes * 60_000).toISOString(),
+      done: 0, total: targets.length, current: "Asking devices to describe themselves", port_check: state.settings.port_check,
+    };
+    state.timer = setInterval(() => {
+      if (state.identify.done >= targets.length) return finishIdentify(targets, null);
+      state.identify = { ...state.identify, current: targets[state.identify.done].ips[0] ?? null, done: state.identify.done + 1 };
+    }, 700);
+    return delay(state.identify);
+  },
+  stopIdentify: async () => {
+    if (state.identify.running) {
+      const targets = state.devices.filter((d) => d.online);
+      finishIdentify(targets, "it was stopped");
+    }
+    return delay(state.identify);
   },
   exportUrl: "data:application/json,[]",
   streamUrl: null,

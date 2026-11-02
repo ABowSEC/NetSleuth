@@ -4,7 +4,7 @@ import type { Device } from "./types";
 
 const device = (mac: string, partial: Partial<Device>): Device => ({
   mac, name: null, hostname: null, vendor: null, type: "unknown", is_known: false, online: false,
-  ips: [], first_seen: "2026-10-01T00:00:00Z", last_seen: "2026-10-30T00:00:00Z", notes: null, ...partial,
+  ips: [], first_seen: "2026-10-01T00:00:00Z", last_seen: "2026-10-30T00:00:00Z", notes: null, model: null, os: null, suggested_name: null, ...partial,
 });
 
 const devices = [

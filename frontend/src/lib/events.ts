@@ -32,4 +32,5 @@ export const KIND_VERBS: Record<NetEvent["kind"], string> = {
   ip_changed: "new IP",
   mac_conflict: "clash",
   alert: "alert",
+  identified: "identified",
 };

@@ -18,6 +18,10 @@ export interface Device {
   first_seen: string;
   last_seen: string;
   notes: string | null;
+  // Identification, derived from evidence (null when unknown)
+  model: string | null;
+  os: string | null;
+  suggested_name: string | null;
 }
 
 export interface DomainCount {
@@ -38,13 +42,35 @@ export interface PresenceSession {
   end: string | null;
 }
 
+export const EVIDENCE_SOURCES = ["upnp", "roku", "mdns", "netbios", "rdns", "dhcp", "ssdp", "ports"] as const;
+export type EvidenceSource = (typeof EVIDENCE_SOURCES)[number];
+
+export interface EvidenceItem {
+  source: EvidenceSource;
+  key: string;
+  value: string;
+  confidence: number;
+  last_seen: string;
+}
+
+export interface Suggestion {
+  name: string | null;
+  model: string | null;
+  os: string | null;
+  type: DeviceType;
+}
+
 export interface DeviceDetail extends Device {
   top_domains: DomainCount[];
   top_destinations: DestinationCount[];
   presence: PresenceSession[];
+  evidence: EvidenceItem[];
+  suggestion: Suggestion | null;
 }
 
-export const EVENT_KINDS = ["joined", "left", "new_device", "ip_changed", "mac_conflict", "alert"] as const;
+export const EVENT_KINDS = [
+  "joined", "left", "new_device", "ip_changed", "mac_conflict", "alert", "identified",
+] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
 export const SEVERITIES = ["info", "low", "medium", "high", "critical"] as const;
@@ -81,6 +107,19 @@ export interface Settings {
   retention_days: number;
   lan_exposure: boolean;
   anomaly_plugin: boolean;
+  port_check: boolean;
+  identify_minutes: number;
+}
+
+/** Identify mode: active probing that switches itself off. */
+export interface IdentifyStatus {
+  running: boolean;
+  started_at: string | null;
+  ends_at: string | null;
+  done: number;
+  total: number;
+  current: string | null;
+  port_check: boolean;
 }
 
 export interface DevicePatch {
