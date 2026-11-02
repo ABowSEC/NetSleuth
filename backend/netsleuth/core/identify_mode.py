@@ -28,7 +28,7 @@ from .store import Device, DeviceStore
 
 log = logging.getLogger(__name__)
 
-RECENTLY_IDENTIFIED = timedelta(days=7)
+RECENTLY_IDENTIFIED = timedelta(hours=1)  # only guards against a double click; a user asking means run
 HTTP_TITLE_PORTS = (80, 8080, 8060)
 
 
@@ -211,18 +211,27 @@ class IdentifySession:
         add = lambda source, key, value, confidence=1.0: value and self.store.add_evidence(  # noqa: E731
             mac, source, key, str(value), confidence)
 
+        found: dict[str, object] = {}
         if ssdp_headers.get("server"):
             add("ssdp", "server", ssdp_headers["server"], 0.6)
-        location = ssdp_headers.get("location")
+        # Some devices only announce themselves (NOTIFY) and never answer a search:
+        # fall back to the description URL the passive listener already recorded.
+        stored = {(e.source, e.key): e.value for e in self.store.evidence(mac)}
+        location = ssdp_headers.get("location") or stored.get(("ssdp", "location"))
         if location:
             add("ssdp", "location", location, 0.5)
-            for key, value in (self._safely(self.probers.fetch_description, location, self.network) or {}).items():
+            description = self._safely(self.probers.fetch_description, location, self.network) or {}
+            for key, value in description.items():
                 add("upnp", key, value)
-        add("netbios", "name", self._safely(self.probers.netbios_name, ip), 0.9)
-        add("rdns", "name", self._safely(self.probers.reverse_dns, ip), 0.6)
+            found["upnp"] = description.get("modelName") or description.get("friendlyName") or bool(description)
+        found["netbios"] = self._safely(self.probers.netbios_name, ip)
+        found["rdns"] = self._safely(self.probers.reverse_dns, ip)
+        add("netbios", "name", found["netbios"], 0.9)
+        add("rdns", "name", found["rdns"], 0.6)
 
         if port_check and ip != self.gateway_ip:
             open_ports = self._safely(self.probers.port_check, ip) or []
+            found["ports"] = ",".join(map(str, open_ports)) or None
             if open_ports:
                 add("ports", "open", ",".join(map(str, sorted(open_ports))), 0.8)
                 for port in HTTP_TITLE_PORTS:
@@ -230,6 +239,8 @@ class IdentifySession:
                         add("ports", "http_title", self._safely(self.probers.http_title, ip, port), 0.5)
                         break
 
+        # One line per device, so a quiet run can be diagnosed from the log.
+        log.info("Identify %s: %s", ip, ", ".join(f"{k}={v or '-'}" for k, v in found.items()))
         self.store.mark_identified(mac)
         with self._lock:
             self._status["done"] += 1
@@ -253,7 +264,7 @@ class IdentifySession:
         done = self.status()["done"]
 
         if not targets:
-            message = "Identify found nothing to check: every online device was identified in the last 7 days."
+            message = "Identify found nothing to check: every online device was checked in the last hour."
         else:
             message = f"Identify finished: learned more about {len(improved)} of {len(targets)} devices"
             message += f" ({', '.join(examples)}{', …' if len(improved) > len(examples) else ''})." if examples else "."

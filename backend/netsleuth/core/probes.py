@@ -30,6 +30,7 @@ DESCRIPTION_LIMIT = 64 * 1024
 TITLE_LIMIT = 32 * 1024
 CHECK_PORTS = (80, 443, 445, 548, 554, 631, 1400, 7000, 8008, 8009, 8060, 9100, 62078)
 UPNP_FIELDS = ("friendlyName", "manufacturer", "modelName", "modelNumber", "deviceType")
+SEARCH_TARGETS = ("ssdp:all", "upnp:rootdevice", "urn:dial-multiscreen-org:service:dial:1", "roku:ecp", "ssdp:all")
 
 _TITLE = re.compile(rb"<title[^>]*>(.*?)</title>", re.I | re.S)
 
@@ -47,15 +48,18 @@ def _parse_headers(text: str) -> dict[str, str]:
 
 def ssdp_search(own_ip: str, wait: float = 3.0) -> dict[str, dict[str, str]]:
     """Multicast an M-SEARCH and collect replies: {device ip: headers}."""
-    request = ("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\n"
-               "MX: 2\r\nST: ssdp:all\r\n\r\n").encode()
+    def request(search_target: str) -> bytes:
+        return ("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\n"
+                f"MX: 2\r\nST: {search_target}\r\n\r\n").encode()
+
     replies: dict[str, dict[str, str]] = {}
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as sock:
         sock.bind((own_ip, 0))
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(own_ip))
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-        for _ in range(2):  # UDP is lossy; devices dedupe
-            sock.sendto(request, SSDP_GROUP)
+        # Many devices ignore ssdp:all and only answer a search for their own kind.
+        for search_target in SEARCH_TARGETS:
+            sock.sendto(request(search_target), SSDP_GROUP)
         deadline = time.monotonic() + wait
         while (remaining := deadline - time.monotonic()) > 0:
             sock.settimeout(remaining)

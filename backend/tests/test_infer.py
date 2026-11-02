@@ -111,3 +111,57 @@ def test_model_is_suggested_when_no_name():
 
 def test_suggestion_equal_to_hostname_is_dropped():
     assert infer(ev(("rdns", "name", "den-zenbook.lan")), None, "Den-ZenBook").suggested_name is None
+
+
+# ── Patterns seen on a real home network (values invented) ───────────────
+
+def test_amazon_spotify_and_matter_is_a_speaker():
+    identity = infer(ev(("mdns", "service:_matter._tcp", "_matter._tcp"),
+                        ("mdns", "service:_spotify-connect._tcp", "_spotify-connect._tcp"),
+                        ("mdns", "instance:_spotify-connect._tcp", "SpotifyConnect")),
+                     "Amazon Technologies Inc.", None)
+    assert identity.type == "speaker"
+    assert identity.suggested_name is None   # "SpotifyConnect" is not a name
+
+
+def test_amazon_fire_tv_stays_a_tv():
+    identity = infer(ev(("mdns", "service:_amzn-wplay._tcp", "_amzn-wplay._tcp"),
+                        ("mdns", "service:_spotify-connect._tcp", "_spotify-connect._tcp")),
+                     "Amazon Technologies Inc.", None)
+    assert identity.type == "tv"
+
+
+def test_hisense_server_string_names_a_tv():
+    identity = infer(ev(("ssdp", "server", "Platform 1.0 His/1.0 UPnP/1.0 DLNADOC/1.50")),
+                     "Sichuan AI-Link Technology Co., Ltd.", None)
+    assert (identity.type, identity.model) == ("tv", "Hisense smart TV")
+
+
+@pytest.mark.parametrize("hostname, os_name", [("iPhone", "iOS"), ("Sams-iPad", "iPadOS"),
+                                               ("Den-MacBook", "macOS"), (None, "iOS or macOS")])
+def test_apple_dhcp_fingerprint(hostname, os_name):
+    params = ("dhcp", "params", "1,121,3,6,15,108,114,119,162,252")
+    assert infer(ev(params), None, hostname).os == os_name
+
+
+def test_android_fingerprint_is_not_mistaken_for_apple():
+    assert infer(ev(("dhcp", "params", "1,3,6,15,26,28,51,58,59,43")), None, None).os is None
+
+
+def test_airplay_instance_name_is_suggested_and_ids_are_not():
+    identity = infer(ev(("mdns", "instance:_airplay._tcp", "Grandma"),
+                        ("mdns", "instance:_spotify-connect._tcp", "11111111-2222-3333-4444-555555555555")),
+                     "Roku, Inc", "YN00AB123456")
+    assert identity.suggested_name == "Grandma"
+
+
+def test_raop_instance_strips_the_mac_prefix():
+    identity = infer(ev(("mdns", "instance:_raop._tcp", "0A1B2C3D4E5F@Kitchen Speaker")), None, None)
+    assert identity.suggested_name == "Kitchen Speaker"
+
+
+def test_quest_link_on_a_pc_is_not_a_headset():
+    identity = infer(ev(("mdns", "service:_oculusal_sp._tcp", "_oculusal_sp._tcp"),
+                        ("mdns", "instance:_oculusal_sp._tcp", "sam::DESKTOP-0000000")),
+                     "Micro-Star INTL CO., LTD.", "DESKTOP-0000000")
+    assert identity.type == "computer" and identity.suggested_name is None

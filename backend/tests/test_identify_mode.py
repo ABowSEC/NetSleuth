@@ -118,8 +118,8 @@ def test_port_check_only_runs_when_enabled_and_never_on_the_router(store, engine
 
 
 def test_recently_identified_devices_are_skipped_unless_named(store, engine):
-    store.mark_identified(ROKU, ts=utcnow() - timedelta(days=1))
-    store.mark_identified(PC, ts=utcnow() - timedelta(days=30))
+    store.mark_identified(ROKU, ts=utcnow() - timedelta(minutes=20))
+    store.mark_identified(PC, ts=utcnow() - timedelta(hours=3))
     s = session(store, engine, Fakes())
     assert {mac for mac, _ in s.targets()} == {ROUTER, PC}
     assert {mac for mac, _ in s.targets([ROKU])} == {ROKU}
@@ -232,3 +232,26 @@ def test_own_traffic_never_alerts(store, engine):
     for host in range(3, 40):
         engine.on_flow(Flow(ME, f"10.0.0.{host}", 445, "tcp", True))
     assert store.list_events(kind="alert") == []
+
+
+def test_description_url_from_passive_announcement_is_used(store, engine):
+    tv = "02:00:00:00:00:20"
+    store.observe(tv, "10.0.0.40")
+    store.add_evidence(tv, "ssdp", "location", "http://10.0.0.40:38400/MediaServer/rendererdevicedesc.xml")
+    fakes = Fakes()
+    hisense = {"manufacturer": "Hisense", "modelName": "65A6", "friendlyName": "Living Room TV"}
+    s = session(store, engine, fakes, probers=fakes.probers(
+        ssdp_search={}, fetch_description=lambda url, net: hisense if "10.0.0.40" in url else {}))
+    s.start(minutes=10, macs=[tv])
+    wait_idle(s)
+    device = store.get(tv)
+    assert (device.model, device.suggested_name) == ("Hisense 65A6", "Living Room TV")
+
+
+def test_each_host_is_logged(store, engine, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="netsleuth.core.identify_mode")
+    s = session(store, engine, Fakes())
+    s.start(minutes=10, macs=[PC])
+    wait_idle(s)
+    assert "Identify 10.0.0.10: netbios=DESKTOP-4FJ2K9Q, rdns=-" in caplog.text

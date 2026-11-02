@@ -137,7 +137,7 @@ interface IdentifyStatus {
 | GET | `/settings` | — | `Settings` |
 | PATCH | `/settings` | `Partial<Settings>` | `Settings` |
 | GET | `/identify` | — | `IdentifyStatus` |
-| POST | `/identify/start` | `{ minutes?: 1..30, macs?: string[] }` (default: `identify_minutes`; online devices not identified in 7 days) | `IdentifyStatus`; `409` already running, `423` monitoring paused |
+| POST | `/identify/start` | `{ minutes?: 1..30, macs?: string[] }` (default: `identify_minutes`; online devices not checked in the last hour) | `IdentifyStatus`; `409` already running, `423` monitoring paused |
 | POST | `/identify/stop` | `{}` | `IdentifyStatus` |
 
 ### `/stream` (SSE)

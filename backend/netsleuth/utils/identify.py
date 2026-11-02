@@ -48,7 +48,10 @@ _SERVICE_TYPES: dict[str, tuple[str, float]] = {
     "_sonos._tcp": ("speaker", 0.9),
     "_hap._tcp": ("iot", 0.7),
     "_homekit._tcp": ("iot", 0.6),
-    "_matter._tcp": ("iot", 0.6),
+    "_matter._tcp": ("iot", 0.3),
+    "_display._tcp": ("tv", 0.4),
+    "_oculusal_sp._tcp": ("computer", 0.3),     # Meta Quest Link app on a PC
+    "_oculusal_sp_v2._tcp": ("computer", 0.3),
     "_ipp._tcp": ("printer", 0.9),
     "_ipps._tcp": ("printer", 0.9),
     "_printer._tcp": ("printer", 0.9),
@@ -102,7 +105,11 @@ _APPLE_MODELS: list[tuple[str, str, str]] = [
     ("watch", "Apple Watch", "iot"),
 ]
 
+# mDNS services whose instance name is the name a person gave the device.
+_NAMED_SERVICES = ("_airplay._tcp", "_raop._tcp", "_googlecast._tcp", "_display._tcp")
+
 _ANDROID = re.compile(r"android-dhcp-(\d+)", re.I)
+_ID_LIKE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-|[0-9a-f]{16,}|::", re.I)
 _IP_LIKE = re.compile(r"^\d{1,3}([.-]\d{1,3}){3}")
 _GENERIC_NAMES = {"localhost", "android", "iphone", "ipad", "unknown", "default", "dhcp", "wlan0", "eth0"}
 
@@ -114,7 +121,8 @@ def _clean_name(value: str | None) -> str | None:
     name = value.strip().removesuffix(".local").removesuffix(".")
     name = name.split(".")[0] if "." in name and " " not in name else name
     if (not name or len(name) > 63 or is_placeholder_name(name) or name.lower() in _GENERIC_NAMES
-            or _IP_LIKE.match(name) or re.fullmatch(r"[0-9a-fA-F:\-]{12,17}", name)):
+            or _IP_LIKE.match(name) or re.fullmatch(r"[0-9a-fA-F:\-]{12,17}", name)
+            or _ID_LIKE.search(name) or name.lower().replace(" ", "") in ("spotifyconnect", "spotifydesktoplauncher")):
         return None
     return name
 
@@ -127,7 +135,7 @@ def _apple_model(identifier: str) -> tuple[str, str] | None:
     return None
 
 
-def _os_from(ev: dict[tuple[str, str], Evidence]) -> str | None:
+def _os_from(ev: dict[tuple[str, str], Evidence], hostname: str | None = None) -> str | None:
     vendor_class = ev.get(("dhcp", "vendor_class"))
     if vendor_class:
         v = vendor_class.value
@@ -151,6 +159,17 @@ def _os_from(ev: dict[tuple[str, str], Evidence]) -> str | None:
         return "iOS or iPadOS"
     if ("netbios", "name") in ev:
         return "Windows"
+    # Apple devices ask DHCP for options 121, 108 (IPv6-only) and 114 (captive portal).
+    params = ev.get(("dhcp", "params"))
+    if params and {"121", "108", "114"} <= set(params.value.split(",")):
+        lowered = (hostname or "").lower()
+        if "iphone" in lowered:
+            return "iOS"
+        if "ipad" in lowered:
+            return "iPadOS"
+        if "mac" in lowered:
+            return "macOS"
+        return "iOS or macOS"
     return None
 
 
@@ -205,6 +224,19 @@ def infer(evidence: list[Evidence], vendor: str | None, hostname: str | None, is
         model = model or printer_model
         votes["printer"] += 0.9
 
+    # Echo speakers advertise Spotify Connect (and Matter); Fire TV sticks advertise _amzn-wplay.
+    if (vendor and "amazon" in vendor.lower() and ("mdns", "service:_spotify-connect._tcp") in ev
+            and ("mdns", "service:_amzn-wplay._tcp") not in ev):
+        votes["speaker"] += 0.6
+
+    # SSDP server strings that name the platform
+    server = get("ssdp", "server") or ""
+    if re.search(r"\bHis/|hisense", server, re.I):
+        votes["tv"] += 0.6
+        model = model or "Hisense smart TV"
+    elif re.search(r"\bRoku/", server):
+        votes["tv"] += 0.6
+
     # 3. Opt-in port check
     for port in _open_ports(ev):
         hit = _PORT_TYPES.get(port)
@@ -212,14 +244,15 @@ def infer(evidence: list[Evidence], vendor: str | None, hostname: str | None, is
             votes[hit[0]] += hit[1]
 
     # 4. OS hints and names
-    os_name = _os_from(ev)
+    os_name = _os_from(ev, hostname)
     if os_name and os_name.startswith("Android"):
         votes["phone"] += 0.3
     elif os_name == "Windows":
         votes["computer"] += 0.4
 
+    instance_names = [(get("mdns", f"instance:{svc}") or "").split("@")[-1] or None for svc in _NAMED_SERVICES]
     names = [get("upnp", "friendlyName"), get("mdns", "txt:fn"), get("roku", "friendly_name"),
-             get("netbios", "name"), get("rdns", "name")]
+             *instance_names, get("netbios", "name"), get("rdns", "name")]
     hostname_type = type_from_name(hostname)
     if hostname_type:
         votes[hostname_type] += 0.7

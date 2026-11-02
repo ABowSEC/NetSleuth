@@ -164,3 +164,37 @@ def test_reverse_dns_ignores_echoed_ip(monkeypatch):
     assert probes.reverse_dns("10.0.0.9") is None
     monkeypatch.setattr(socket, "gethostbyaddr", lambda ip: ("den-pc.lan", [], [ip]))
     assert probes.reverse_dns("10.0.0.9") == "den-pc.lan"
+
+
+def test_ssdp_search_asks_for_specific_device_kinds(monkeypatch):
+    sent = []
+
+    class FakeSocket:
+        def __init__(self, *args):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def bind(self, addr):
+            pass
+
+        def setsockopt(self, *args):
+            pass
+
+        def settimeout(self, t):
+            pass
+
+        def sendto(self, data, addr):
+            sent.append(data.decode())
+
+        def recvfrom(self, n):
+            raise socket.timeout()
+
+    monkeypatch.setattr(probes.socket, "socket", FakeSocket)
+    assert probes.ssdp_search("10.0.0.2", wait=0.01) == {}
+    targets = {line.split(": ", 1)[1] for msg in sent for line in msg.split("\r\n") if line.startswith("ST: ")}
+    assert targets == {"ssdp:all", "upnp:rootdevice", "urn:dial-multiscreen-org:service:dial:1", "roku:ecp"}
