@@ -8,12 +8,15 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from flask import Blueprint, Flask, Response, abort, jsonify, request, send_from_directory
 
 from .. import __version__
 from ..core.events import EventEngine
 from ..core.identify_mode import AlreadyRunning, IdentifySession, MonitoringPaused
+from ..core.networks import NetworkRegistry, request_reset, validate_changes
+from ..timeutil import iso, utcnow
 from ..core.pipeline import Pipeline
 from ..core.store import DeviceStore
 from ..settings import Settings
@@ -43,6 +46,11 @@ class AppContext:
     static_dir: Path | None = None
     save_settings: bool = True
     identify: IdentifySession | None = None
+    networks: NetworkRegistry | None = None
+    network_id: str | None = None      # the network this run is on (None in replay mode)
+    legacy_db: Path | None = None      # the pre-profiles devices.db, offered for adoption
+    request_restart: Callable[[], None] | None = None
+    data_root: Path | None = None      # where a reset request is written
 
 
 class ApiError(Exception):
@@ -56,6 +64,7 @@ def create_app(ctx: AppContext) -> Flask:
     app.json.sort_keys = False
     api = Blueprint("api", __name__, url_prefix="/api/v1")
     streams = {"open": 0}
+    started_at = iso(utcnow())         # changes on every restart, so the UI can tell one happened
     streams_lock = threading.Lock()
 
     # ── Guards and errors ────────────────────────────────────────────────────
@@ -119,12 +128,22 @@ def create_app(ctx: AppContext) -> Flask:
             raise ApiError(400, "bad_query", f"{name} must be between {lo} and {hi}.")
         return value
 
+    def current_network():
+        if not ctx.networks or not ctx.network_id:
+            return None
+        return ctx.networks.get(ctx.network_id)
+
     def health() -> dict:
+        network = current_network()
+        idle = network is not None and network.trust == "idle"
         return {
             "status": "ok",
             "version": __version__,
-            "capturing": bool(ctx.pipeline and not ctx.pipeline.paused),
+            "capturing": bool(ctx.pipeline and not ctx.pipeline.paused and not idle),
             "interface": ctx.interface,
+            "started_at": started_at,
+            "network": {"id": network.id, "label": network.label, "ssid": network.ssid,
+                        "trust": network.trust} if network else None,
         }
 
     # ── Status ───────────────────────────────────────────────────────────────
@@ -314,6 +333,10 @@ def create_app(ctx: AppContext) -> Flask:
             macs = [m for m in (normalize_mac(m) for m in macs) if m]
             if not macs:
                 raise ApiError(400, "bad_field", "None of those MAC addresses are valid.")
+        network = current_network()
+        if network is not None and network.trust != "home":
+            raise ApiError(423, "network_not_home",
+                           "Identify only runs on networks you've marked as Home.")
         try:
             return session().start(minutes, macs)
         except AlreadyRunning:
@@ -325,6 +348,104 @@ def create_app(ctx: AppContext) -> Flask:
     def identify_stop():
         body()
         return session().stop(wait=2)
+
+    # ── Networks ─────────────────────────────────────────────────────────────
+
+    def registry() -> NetworkRegistry:
+        if not ctx.networks:
+            raise ApiError(404, "no_networks", "Network profiles aren't used in this mode.")
+        return ctx.networks
+
+    def patch_network(network_id: str):
+        data = body()
+        unknown = set(data) - {"label", "trust"}
+        if unknown:
+            raise ApiError(400, "bad_field", f"Unknown field(s): {', '.join(sorted(unknown))}.")
+        try:
+            validate_changes(**data)
+            network = registry().update(network_id, **data)
+        except ValueError as e:
+            raise ApiError(400, "bad_field", str(e)) from None
+        if network is None:
+            raise ApiError(404, "not_found", "No such network.")
+        return network.to_api(current=network.id == ctx.network_id)
+
+    @api.get("/network")
+    def get_network():
+        network = current_network() if ctx.networks else None
+        if network is None:
+            registry()
+            raise ApiError(404, "not_found", "No current network.")
+        return network.to_api(current=True)
+
+    @api.patch("/network")
+    def patch_current_network():
+        if not ctx.network_id:
+            registry()
+            raise ApiError(404, "not_found", "No current network.")
+        return patch_network(ctx.network_id)
+
+    @api.get("/network/legacy")
+    def get_legacy():
+        if not ctx.network_id or ctx.legacy_db is None:
+            registry()
+            raise ApiError(404, "not_found", "No current network.")
+        return registry().legacy_info(ctx.network_id, ctx.legacy_db)
+
+    @api.post("/network/legacy/adopt")
+    def adopt_legacy():
+        data = body()
+        unknown = set(data) - {"trust"}
+        if unknown:
+            raise ApiError(400, "bad_field", f"Unknown field(s): {', '.join(sorted(unknown))}.")
+        trust = data.get("trust", "home")
+        if trust not in ("home", "observe"):
+            raise ApiError(400, "bad_field", "trust must be home or observe.")
+        if not ctx.network_id or ctx.legacy_db is None:
+            registry()
+            raise ApiError(404, "not_found", "No current network.")
+        info = registry().legacy_info(ctx.network_id, ctx.legacy_db)
+        if not info["available"]:
+            raise ApiError(409, "nothing_to_adopt", "There's no earlier device list waiting to be used.")
+        if not info["adoptable"]:
+            raise ApiError(409, "network_has_data",
+                           "This network has its own records already, so the earlier list can't be moved here.")
+        registry().request_adoption(ctx.network_id, trust)
+        if ctx.request_restart:
+            ctx.request_restart()
+        return {"restarting": True}, 202
+
+    @api.post("/reset")
+    def reset_everything():
+        data = body()
+        if set(data) - {"confirm"} or data.get("confirm") != "reset":
+            raise ApiError(400, "confirmation_required", 'Send {"confirm": "reset"} to delete every device list.')
+        if not ctx.data_root or not ctx.networks:
+            raise ApiError(404, "not_available", "Reset isn't available in this mode.")
+        request_reset(ctx.data_root)
+        log.warning("Reset requested from the dashboard; restarting to apply it")
+        if ctx.request_restart:
+            ctx.request_restart()
+        return {"restarting": True}, 202
+
+    @api.get("/networks")
+    def list_networks():
+        if not ctx.networks:
+            return jsonify([])
+        return jsonify([n.to_api(current=n.id == ctx.network_id) for n in ctx.networks.list()])
+
+    @api.patch("/networks/<network_id>")
+    def patch_other_network(network_id):
+        return patch_network(network_id)
+
+    @api.delete("/networks/<network_id>")
+    def delete_network(network_id):
+        body()
+        if network_id == ctx.network_id:
+            raise ApiError(409, "current_network", "You can't forget the network you're on.")
+        if not registry().forget(network_id):
+            raise ApiError(404, "not_found", "No such network.")
+        return "", 204
 
     # ── Settings ─────────────────────────────────────────────────────────────
 

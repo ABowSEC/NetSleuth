@@ -34,10 +34,16 @@ def interface_info(name: str) -> InterfaceInfo | None:
     return None
 
 
-def default_gateway_ip() -> str | None:
-    """IPv4 default gateway from the OS routing table, via scapy."""
+def default_gateway_ip(refresh: bool = False) -> str | None:
+    """IPv4 default gateway from the OS routing table, via scapy.
+
+    Scapy caches the routing table; ``refresh`` re-reads it (after a network change).
+    """
     try:
+        import scapy.route  # noqa: F401  (fills conf.route; scapy.config alone leaves it None)
         from scapy.config import conf
+        if refresh:
+            conf.route.resync()
         gateway = conf.route.route("0.0.0.0")[2]
     except Exception:
         return None

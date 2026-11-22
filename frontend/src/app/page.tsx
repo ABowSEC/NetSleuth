@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DeviceDrawer } from "@/components/DeviceDrawer";
 import { DeviceRows, NewcomerList } from "@/components/DeviceList";
 import { IdentifyStrip } from "@/components/IdentifyStrip";
+import { IdleNetworkSetup } from "@/components/NetworkSetup";
 import { Button, Card, EmptyLine, ErrorNotice, GroupHeading } from "@/components/ui";
 import { useLive } from "@/context/LiveContext";
 import { useToast } from "@/context/ToastContext";
@@ -69,6 +70,18 @@ function DevicesView() {
     }
   };
 
+  const network = health?.network ?? null;
+  const idle = network?.trust === "idle";
+  // Identify probes devices, so it's offered only where the user said this is their network.
+  const canIdentify = !network || network.trust === "home";
+
+  if (idle && network && !devices.length && !error) {
+    return (
+      <div className="space-y-8">
+        <IdleNetworkSetup key={network.id} networkId={network.id} />
+      </div>
+    );
+  }
   if (!data && !error) return <FirstSweep />;
 
   const online = devices.filter((d) => d.online).length;
@@ -78,6 +91,8 @@ function DevicesView() {
 
   return (
     <div className="space-y-8">
+      {idle && network && <IdleNetworkSetup key={network.id} networkId={network.id} />}
+
       <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -93,7 +108,7 @@ function DevicesView() {
             ))}
           </p>
         </div>
-        {!identify.status.running && devices.length > 0 && (
+        {canIdentify && !identify.status.running && devices.length > 0 && (
           <Button
             onClick={() => identify.start()}
             disabled={identify.pending}
@@ -136,7 +151,7 @@ function DevicesView() {
         <section>
           <div className="flex items-baseline justify-between gap-3">
             <GroupHeading count={groups.unrecognised.length} tone="text-warn">Haven&apos;t met these yet</GroupHeading>
-            {!identify.status.running && groups.unrecognised.some((d) => d.online) && (
+            {canIdentify && !identify.status.running && groups.unrecognised.some((d) => d.online) && (
               <button
                 type="button"
                 disabled={identify.pending}

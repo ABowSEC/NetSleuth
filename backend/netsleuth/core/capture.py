@@ -19,8 +19,11 @@ class CapturePermissionError(CaptureError):
     """The OS refused raw capture for this user."""
 
 
-def run_capture(iface: str, on_packet: Callable) -> None:
-    """Capture on ``iface`` until interrupted, passing each packet to ``on_packet``."""
+def run_capture(iface: str, on_packet: Callable, stop: Callable[[], bool] | None = None) -> None:
+    """Capture on ``iface``, passing each packet to ``on_packet``.
+
+    Runs until interrupted, or until ``stop()`` is true when a packet arrives.
+    """
     from scapy.config import conf
     from scapy.error import Scapy_Exception
     from scapy.sendrecv import sniff
@@ -29,7 +32,10 @@ def run_capture(iface: str, on_packet: Callable) -> None:
         raise CaptureError("Npcap is not installed. Get it from https://npcap.com and restart NetSleuth.")
 
     try:
-        sniff(iface=iface, prn=on_packet, store=False)
+        # chainCC: by default scapy swallows Ctrl+C / interrupt_main and just returns,
+        # which would look like a normal stop. Shutdown must reach the caller.
+        sniff(iface=iface, prn=on_packet, store=False, chainCC=True,
+              stop_filter=(lambda _pkt: stop()) if stop else None)
     except PermissionError as e:
         raise CapturePermissionError(str(e)) from e
     except (OSError, Scapy_Exception) as e:

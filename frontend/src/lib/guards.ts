@@ -2,9 +2,10 @@
 // default instead of crashing the page (the old UI died on a non-string hostname).
 
 import {
-  DEVICE_TYPES, EVENT_KINDS, EVIDENCE_SOURCES, SEVERITIES,
+  DEVICE_TYPES, EVENT_KINDS, EVIDENCE_SOURCES, SEVERITIES, TRUST_LEVELS,
   type Device, type DeviceDetail, type DeviceType, type EventKind, type EvidenceSource, type Health,
-  type IdentifyStatus, type NetEvent, type Settings, type Severity, type Summary,
+  type IdentifyStatus, type LegacyList, type NetEvent, type Network, type Settings, type Severity, type Summary,
+  type Trust,
 } from "./types";
 
 type Obj = Record<string, unknown>;
@@ -132,11 +133,49 @@ export function toSummary(raw: unknown): Summary {
 
 export function toHealth(raw: unknown): Health {
   const h = obj(raw);
+  const n = h.network && typeof h.network === "object" ? obj(h.network) : null;
   return {
     status: "ok",
     version: str(h.version),
     capturing: bool(h.capturing),
     interface: optStr(h.interface),
+    started_at: optStr(h.started_at),
+    // Unknown trust degrades to idle: never assume more than the backend said.
+    network: n && str(n.id)
+      ? { id: str(n.id), label: optStr(n.label), ssid: optStr(n.ssid), trust: oneOf<Trust>(n.trust, TRUST_LEVELS, "idle") }
+      : null,
+  };
+}
+
+export function toNetwork(raw: unknown): Network {
+  const n = obj(raw);
+  return {
+    id: str(n.id),
+    label: optStr(n.label),
+    ssid: optStr(n.ssid),
+    subnet: str(n.subnet),
+    gateway_ip: optStr(n.gateway_ip),
+    gateway_mac: optStr(n.gateway_mac),
+    trust: oneOf<Trust>(n.trust, TRUST_LEVELS, "idle"),
+    first_seen: str(n.first_seen),
+    last_seen: str(n.last_seen),
+    similar_to: optStr(n.similar_to),
+    current: bool(n.current),
+  };
+}
+
+export function toNetworks(raw: unknown): Network[] {
+  return arr(raw).map(toNetwork).filter((n) => n.id);
+}
+
+export function toLegacy(raw: unknown): LegacyList {
+  const l = obj(raw);
+  return {
+    available: bool(l.available),
+    devices: num(l.devices),
+    last_seen: optStr(l.last_seen),
+    likely_here: bool(l.likely_here),
+    adoptable: bool(l.adoptable),
   };
 }
 

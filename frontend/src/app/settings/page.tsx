@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useSyncExternalStore } from "react";
+import { ResetCard } from "@/components/ResetCard";
 import { Button, Card, ErrorNotice } from "@/components/ui";
 import { useLive } from "@/context/LiveContext";
 import { useTheme, type ThemeMode } from "@/context/ThemeContext";
@@ -132,6 +133,8 @@ export default function SettingsPage() {
           />
         </Row>
       </Card>
+
+      <ResetCard />
     </div>
   );
 }

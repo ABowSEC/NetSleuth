@@ -13,6 +13,7 @@ import signal
 import socket
 import sys
 import threading
+import time
 from ipaddress import ip_address
 
 from . import __version__
@@ -26,6 +27,7 @@ EXIT_ERROR = 1
 EXIT_USAGE = 2
 EXIT_PERMISSION = 3
 EXIT_PORT_IN_USE = 4
+EXIT_NETWORK_CHANGED = 5     # moved to another network: the supervisor restarts us straight away
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -159,42 +161,127 @@ def main(argv: list[str] | None = None) -> int:
     return run(args, settings, host, info)
 
 
+def identify_network(info, attempts: int = 5, delay_s: float = 2.0):
+    """Fingerprint the network ``info`` is on. Sends nothing.
+
+    The router's MAC is read from the OS ARP cache. Right after connecting it
+    may not be there yet, so wait briefly for the OS to resolve it on its own.
+    """
+    from .core.networks import Fingerprint, current_fingerprint
+
+    fp = None
+    for attempt in range(attempts):
+        fp = current_fingerprint(info.name)
+        if fp is None or fp.gateway_mac or not fp.gateway_ip:
+            break
+        if attempt < attempts - 1:
+            time.sleep(delay_s)
+    if fp is None:
+        fp = Fingerprint(str(info.network), info.ip)
+    if fp.gateway_ip and not fp.gateway_mac:
+        log.warning("Router %s isn't in the ARP cache; identifying this network by subnet and name only.",
+                    fp.gateway_ip)
+    return fp
+
+
 def run(args, settings: Settings, host: str, info) -> int:
     from .core.capture import CaptureError, CapturePermissionError, run_capture
     from .core.discovery import Discovery
     from .core.events import EventEngine
     from .core.identify_mode import IdentifySession
     from .core.legacy import import_legacy
+    from .core.networks import NetworkRegistry, NetworkWatch, apply_pending_reset
     from .core.pipeline import Pipeline
     from .core.store import DeviceStore
-    from .settings import db_path
-    from .utils.network_utils import default_gateway_ip
+    from .settings import data_dir, db_path
     from .web.api import AppContext, Server, create_app, default_static_dir
 
-    gateway = default_gateway_ip()
-    if gateway and ip_address(gateway) not in info.network:
-        gateway = None
-    log.info("Monitoring %s (%s on %s, gateway %s)", info.name, info.ip, info.network, gateway or "unknown")
+    fp = identify_network(info)
+    gateway = fp.gateway_ip
+    was_reset = apply_pending_reset(data_dir())
+    registry = NetworkRegistry(data_dir())
+    if was_reset:
+        registry.set_meta("reset_at", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    network, created = registry.resolve(fp)
+    # The old device list moves only when the user chose it on the dashboard (never guessed).
+    pending = registry.take_pending_adoption(network.id)
+    if pending and registry.adopt_legacy(network.id, db_path(), trust=pending):
+        network = registry.get(network.id)
+    log.info("Network %s (%s, %s on %s, router %s): %s",
+             network.id, network.display_name, info.ip, info.network, gateway or "unknown", network.trust)
 
-    store = DeviceStore(db_path())
-    import_legacy(store)
+    # Live view of this network's trust and link, read on every packet.
+    state = {"trust": network.trust, "link": True}
+
+    def capturing_allowed() -> bool:
+        return state["trust"] != "idle" and state["link"]
+
+    store = DeviceStore(registry.db_path(network.id))
+    if network.trust == "home" and not registry.get_meta("reset_at"):
+        import_legacy(store)          # pre-refactor names belong to the home inventory only; not after a reset
     store.start()
     engine = EventEngine(store, gateway, first_run=not store.list_events(limit=1), own_mac=info.mac)
     pipeline = Pipeline(
         store, info.network, gateway, engine,
         offline_timeout_s=lambda: settings.offline_timeout_s,
         retention_days=lambda: settings.retention_days,
+        accept=capturing_allowed,
     )
-    discovery = Discovery(pipeline, info.name, info.ip, lambda: settings.sweep_interval_s)
+    discovery = Discovery(pipeline, info.name, info.ip, lambda: settings.sweep_interval_s,
+                          enabled=lambda: state["trust"] == "home" and state["link"])
     identify = IdentifySession(
         store, engine, info.network, info.ip, own_mac=info.mac, gateway_ip=gateway,
         port_check_enabled=lambda: settings.port_check, is_paused=lambda: pipeline.paused,
     )
 
+    def on_network_update(changed_network) -> None:
+        if changed_network.id != network.id:
+            return
+        if changed_network.trust != state["trust"]:
+            log.info("This network is now %s", changed_network.trust)
+        state["trust"] = changed_network.trust
+        if changed_network.trust != "home" and identify.status()["running"]:
+            identify.stop(wait=0)
+
+    registry.subscribe(on_network_update)
+
+    if created and network.similar_to:
+        twin = registry.get(network.similar_to)
+        if twin and twin.trust == "home":
+            engine.emit(
+                "alert", "high",
+                f"This network is called {network.ssid!r}, like your network {twin.display_name}, "
+                "but its router is different. If you replaced your router, set this network to Home. "
+                "If not, another device may be imitating your network. NetSleuth stays idle here.",
+                rule="network_lookalike", similar_to=twin.id, network=network.id,
+            )
+
+    network_changed = threading.Event()
+
+    def on_change(_new_fp) -> None:
+        network_changed.set()
+        _thread.interrupt_main()
+
+    def on_link(up: bool) -> None:
+        if up != state["link"]:
+            log.info("Network link %s", "back" if up else "lost; pausing until it returns")
+        state["link"] = up
+
+    watch = NetworkWatch(info.name, fp, on_change=on_change, on_link=on_link)
+
+    def request_restart() -> None:
+        """Restart soon (after the API has answered), e.g. to adopt the old device list."""
+        def later() -> None:
+            time.sleep(0.5)
+            on_change(None)
+        threading.Thread(target=later, name="restart", daemon=True).start()
+
     static_dir = default_static_dir()
     app = create_app(AppContext(
         store=store, engine=engine, settings=settings, pipeline=pipeline,
         interface=info.name, dev=args.dev, static_dir=static_dir, identify=identify,
+        networks=registry, network_id=network.id, legacy_db=db_path(), request_restart=request_restart,
+        data_root=data_dir(),
     ))
     server = Server(app, host, args.port)
 
@@ -203,18 +290,34 @@ def run(args, settings: Settings, host: str, info) -> int:
         watch_stdin(sys.stdin.buffer, _thread.interrupt_main)
     pipeline.start()
     discovery.start()
+    watch.start()
     server.start()
     log.info("Dashboard at http://%s:%d", "localhost" if host == "127.0.0.1" else host, args.port)
     if not static_dir.is_dir():
         log.warning("UI not built (%s missing); only the API is served.", static_dir)
     if host != "127.0.0.1":
         log.warning("Dashboard is reachable from your LAN (bound to %s).", host)
+    if network.trust == "idle":
+        log.info("NetSleuth is idle on this network: nothing is captured. "
+                 "Set it to Home or Observe on the dashboard to start.")
 
     code = EXIT_OK
+    idle = threading.Event()        # never set; waited on for responsive idling
     try:
-        run_capture(info.name, pipeline.submit)
+        while True:
+            if state["trust"] == "idle":
+                idle.wait(1)
+                continue
+            engine.begin()
+            run_capture(info.name, pipeline.submit, stop=lambda: state["trust"] == "idle")
+            if state["trust"] != "idle":
+                # Capture ended without being asked to idle: treat it as a stop request.
+                raise KeyboardInterrupt
+            log.info("Capture stopped: this network was set to idle.")
     except KeyboardInterrupt:
-        pass
+        if network_changed.is_set():
+            log.info("Restarting to switch network profiles.")
+            code = EXIT_NETWORK_CHANGED
     except CapturePermissionError as e:
         log.error("Packet capture permission denied: %s", e)
         log.error("Run from an administrator terminal, or reinstall Npcap without admin-only restriction.")
@@ -227,6 +330,7 @@ def run(args, settings: Settings, host: str, info) -> int:
         code = EXIT_ERROR
     finally:
         log.info("Shutting down.")
+        watch.stop()
         identify.stop(wait=5)
         discovery.stop()
         pipeline.stop()

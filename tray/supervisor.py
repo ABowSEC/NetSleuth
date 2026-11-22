@@ -39,6 +39,9 @@ class State(str, Enum):
     ERROR = "error"
 
 
+EXIT_NETWORK_CHANGED = 5     # backend moved to another network; restart at once, not a crash
+
+
 def exit_message(code: int, port: int) -> str | None:
     """Human explanation for the backend's documented exit codes."""
     return {
@@ -76,6 +79,7 @@ class Supervisor:
         backoff: tuple[float, ...] = (2, 4, 8, 16, 32),
         max_crashes: int = 5,
         crash_window: float = 600.0,
+        network_delay: float = 1.0,
     ):
         self._command = command
         self.port = port
@@ -87,6 +91,7 @@ class Supervisor:
         self._backoff = backoff
         self._max_crashes = max_crashes
         self._crash_window = crash_window
+        self._network_delay = network_delay    # short pause so a flapping link can't spin
 
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -158,6 +163,14 @@ class Supervisor:
                 self._proc = None
             if self._stop.is_set():
                 return
+
+            if code == EXIT_NETWORK_CHANGED:
+                # Not a crash: the PC joined another network. Start again on its profile.
+                log.info("Backend restarting for a network change")
+                self._set(State.RESTARTING, "Network changed. Switching to that network's profile…")
+                if self._stop.wait(self._network_delay):
+                    return
+                continue
 
             log.warning("Backend exited with code %s", code)
             fatal = exit_message(code, self.port)

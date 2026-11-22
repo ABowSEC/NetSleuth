@@ -1,10 +1,12 @@
 import {
-  toDeviceDetail, toDevice, toDevices, toEvents, toHealth, toIdentify, toSettings, toSummary,
+  toDeviceDetail, toDevice, toDevices, toEvents, toHealth, toIdentify, toLegacy, toNetwork, toNetworks,
+  toSettings, toSummary,
 } from "./guards";
 import { ApiError } from "./errors";
 import { mockApi } from "./mock";
 import type {
-  Device, DeviceDetail, DevicePatch, EventKind, Health, IdentifyStatus, NetEvent, Settings, Summary,
+  Device, DeviceDetail, DevicePatch, EventKind, Health, IdentifyStatus, LegacyList, NetEvent, Network,
+  NetworkPatch, Settings, Summary,
 } from "./types";
 
 export { ApiError };
@@ -73,6 +75,17 @@ export interface Api {
   identify(): Promise<IdentifyStatus>;
   startIdentify(options?: { minutes?: number; macs?: string[] }): Promise<IdentifyStatus>;
   stopIdentify(): Promise<IdentifyStatus>;
+  /** The network this PC is on. */
+  network(): Promise<Network>;
+  networks(): Promise<Network[]>;
+  /** Change a network's name or trust; `id` null means the current network. */
+  updateNetwork(id: string | null, patch: NetworkPatch): Promise<Network>;
+  forgetNetwork(id: string): Promise<void>;
+  legacy(): Promise<LegacyList>;
+  /** Move the earlier device list onto this network. NetSleuth restarts to do it. */
+  adoptLegacy(trust: "home" | "observe"): Promise<void>;
+  /** Delete every network and device list (settings and logs are kept). NetSleuth restarts to do it. */
+  resetEverything(): Promise<void>;
   exportUrl: string;
   streamUrl: string | null;
 }
@@ -96,6 +109,20 @@ const httpApi: Api = {
   identify: async () => toIdentify(await request("/identify")),
   startIdentify: async (options = {}) => toIdentify(await write("POST", "/identify/start", options)),
   stopIdentify: async () => toIdentify(await write("POST", "/identify/stop")),
+  network: async () => toNetwork(await request("/network")),
+  networks: async () => toNetworks(await request("/networks")),
+  updateNetwork: async (id, patch) =>
+    toNetwork(await write("PATCH", id === null ? "/network" : `/networks/${encodeURIComponent(id)}`, patch)),
+  forgetNetwork: async (id) => {
+    await write("DELETE", `/networks/${encodeURIComponent(id)}`);
+  },
+  legacy: async () => toLegacy(await request("/network/legacy")),
+  adoptLegacy: async (trust) => {
+    await write("POST", "/network/legacy/adopt", { trust });
+  },
+  resetEverything: async () => {
+    await write("POST", "/reset", { confirm: "reset" });
+  },
   exportUrl: `${BASE}/events/export`,
   streamUrl: `${BASE}/stream`,
 };

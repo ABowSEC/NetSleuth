@@ -102,6 +102,19 @@ class EventEngine(PipelineObserver):
             self._cooldowns[key] = now
             return True
 
+    def begin(self) -> None:
+        """Capture is (re)starting: open a fresh start-up grace period.
+
+        Used when a network goes from idle to monitored. If nothing has been
+        recorded on it yet, its devices are summarised like a first run.
+        """
+        first_run = not self.store.list_events(limit=1)
+        with self._lock:
+            self._started = self._clock()
+            self.first_run = first_run
+            self._baseline_reported = not first_run
+            self._baseline.clear()
+
     @property
     def in_grace(self) -> bool:
         return self._clock() - self._started < STARTUP_GRACE_S

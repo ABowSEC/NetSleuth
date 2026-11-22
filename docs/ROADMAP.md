@@ -27,16 +27,16 @@ Written 2026-11-21. These are design notes, not commitments. The order of work i
 |---|---|---|---|---|
 | `home` | yes | yes | yes | yes |
 | `observe` | passive only | no | no | in the log only, no toasts |
-| `ignore` (the default for a new network) | no | no | no | no |
+| `idle` (the default for a new network) | no | no | no | no |
 
 **Storage**
 - One database per network: `networks/<id>/devices.db`, plus a `networks.json` index.
 - `DeviceStore` doesn't change, networks are fully isolated, and forgetting one means deleting a folder.
-- The existing database is adopted as the first `home` network.
+- The existing database is offered on the dashboard and moved only when the user chooses. (An automatic match by router was tried and adopted the list into a friend's network: same 10.0.0.0/24, router at .1.)
 
-**Switching**
-- The tray checks the default route and gateway every ~10 s. When they change, it restarts the backend with `--network <id>`.
-- On a network it hasn't seen before, the backend starts in `ignore` mode and serves only the dashboard.
+**Switching** (built)
+- The backend fingerprints the network itself at start-up and rechecks every 15 s. When the network changes, it exits with code 5 and the tray restarts it at once, on the new network's profile. No `--network` flag is needed.
+- On a network it hasn't seen before, the backend starts idle and serves only the dashboard.
 
 **API**
 - `GET /network` returns `{id, label, ssid, subnet, trust}`.
@@ -73,6 +73,15 @@ Written 2026-11-21. These are design notes, not commitments. The order of work i
   Then delete `ml/`.
 - **Watch list.** Notify when a chosen device leaves or comes back.
 - **LAN token.** Required whenever the dashboard is bound to anything other than localhost. It's generated on first enable and shown once as a QR code.
+
+### Status of network profiles
+
+- **Step 1 (backend), done:** fingerprinting, the registry, a database per network, trust gates, the change watcher with exit code 5, the `/network` and `/networks` API, the look-alike alert, and an immediate tray restart on code 5.
+- **Confirm-first setup, done:** nothing is recorded on a network until the user chooses. The dashboard's setup view shows how the network was recognised, offers the earlier device list (with a "recorded on this router" hint), and asks Home, Observe or Idle. Adoption goes through `POST /network/legacy/adopt` and a restart.
+- **Step 3 (dashboard), partly done:** the setup view, the Networks page (rename, change trust, forget), and the header badge (Idle / Listening / Watching).
+- **Step 2 (tray):** a grey icon while idle, no notifications on Observe or Idle networks, and the trust level in the tooltip and menu.
+- **Step 3, remaining:** a cleanup for devices from other networks that are already in the earlier list. They can share the home subnet, so it must sort them by router and time, not by address.
+- **Later:** a "same network, new router" action that links the new router to the existing Home inventory instead of starting a fresh one.
 
 ## Order of work
 

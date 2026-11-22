@@ -92,13 +92,37 @@ To override any setting for a single run, set an environment variable of the for
 
 The tray's own preferences (interface, port, notifications) are in `tray.json`.
 
+## Networks
+
+NetSleuth keeps a separate device list for each network your PC joins, so devices at school, work or a café never mix with your home list. It recognises a network by its router (the router's hardware address plus the subnet). The Wi-Fi name is shown as a label, but on its own it isn't trusted, because names repeat and anyone can copy yours.
+
+Each network has a trust level:
+
+| Trust | What NetSleuth does there |
+|---|---|
+| Home | Everything: listening, network sweeps, Identify, alerts and notifications |
+| Observe | Listens only. No sweeps, no Identify. |
+| Idle | Nothing. This is where every new network starts. |
+
+On a network it hasn't met, NetSleuth records nothing and the dashboard opens on a setup view instead. It shows how it recognised the network (Wi-Fi name, address range, router) and asks what NetSleuth may do there: **Home**, **Observe** or **Idle**. If you used NetSleuth before network profiles, the setup view also offers your earlier device list. It says whether that list was recorded on this network's router, but it's only moved when you choose it. Many networks look alike (a friend's router can use the same 10.0.0.x addresses as yours), so NetSleuth never guesses.
+
+The **Networks** page lists every network the PC has joined. You can rename each one, change its trust level, or forget it along with its device list.
+
+To start over completely, use **Reset NetSleuth** at the bottom of **Settings**. It deletes every network and device list, including names, notes, history and activity. Your settings and logs are kept. NetSleuth restarts to do it, and the network you're on comes back as new and idle. If the dashboard won't open, you can do the same by hand: quit NetSleuth, create an empty file named `reset-pending` in `%LOCALAPPDATA%\NetSleuth`, then start it again.
+
+When the PC moves to another network, NetSleuth switches to that network's list within about 15 seconds.
+
+If a new network has the same Wi-Fi name and subnet as your Home network but a different router, NetSleuth stays idle and raises an alert. If you replaced your router, set the new one to Home. If you didn't, another device may be imitating your network.
+
 ## Where things are stored
 
 Everything is under `%LOCALAPPDATA%\NetSleuth`. Set `NETSLEUTH_HOME` to move it.
 
 | Path | Contents |
 |---|---|
-| `devices.db` | SQLite database: devices, IP history, presence, activity, traffic counts |
+| `networks.json` | The networks NetSleuth knows, with their trust levels |
+| `networks\<id>\devices.db` | One SQLite database per network: devices, IP history, presence, activity, traffic counts |
+| `replay\devices.db` | Throwaway database for replay mode |
 | `config.toml`, `tray.json` | Settings |
 | `logs\` | `netsleuth.log` / `backend.log`, `backend-stderr.log`, `tray.log` |
 | `run\` | `backend.pid`, `tray.lock` |
@@ -111,6 +135,8 @@ Everything is under `%LOCALAPPDATA%\NetSleuth`. Set `NETSLEUTH_HOME` to move it.
 | "Port 5000 is already in use" | Something else is listening there. Close it, or set `"port"` in `tray.json`. |
 | No devices appear | Check that the tray is watching the right interface: **Network interface** in the menu. |
 | Dashboard says "Can't reach NetSleuth" | The backend isn't running. Use **Restart NetSleuth** in the tray menu, and check `logs\backend.log`. |
+| A Wi-Fi network shows no name | Windows only shares the Wi-Fi name with apps when Location services are on (Settings → Privacy & security → Location, "Let desktop apps access your location"). NetSleuth still tells networks apart by their router. |
+| The dashboard shows "New network" | NetSleuth hasn't been told about this network yet, so it's recording nothing. Choose Home, Observe or Idle (see **Networks**). |
 | A device has no maker | Phones and tablets use private (randomised) Wi-Fi addresses with no maker prefix. The device drawer explains how to match one up. |
 
 ## How it works
@@ -141,6 +167,7 @@ cd backend   && python -m pytest       # backend
 python -m pytest tray                  # tray supervisor (run from repo root)
 cd frontend  && npm run check          # types, lint, unit tests
 cd frontend  && npm run dev:mock       # dashboard with fake data, no backend
+                                       # set NEXT_PUBLIC_MOCK_SCENARIO=new-network to start on an unknown network
 ```
 
 To work on the dashboard against a real backend, run `python -m netsleuth --dev` and `npm run dev`, then open `localhost:3000`.

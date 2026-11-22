@@ -102,6 +102,15 @@ def test_configuration_errors_are_not_retried(harness, monkeypatch, code, needle
     assert needle in h.sup.message
 
 
+def test_network_change_restarts_without_counting_as_a_crash(harness, monkeypatch):
+    monkeypatch.setenv("FAKE_MODE", "exit5")
+    h = harness(max_crashes=2, network_delay=0.01)
+    h.sup.start()
+    assert wait_for(lambda: h.spawns >= 4, timeout=20)
+    assert State.ERROR not in h.states
+    assert State.RESTARTING in h.states
+
+
 def test_hung_backend_is_killed_on_stop(harness, monkeypatch):
     monkeypatch.setenv("FAKE_MODE", "hang")
     h = harness(stop_grace=0.5)

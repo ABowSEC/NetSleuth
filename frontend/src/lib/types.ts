@@ -94,11 +94,51 @@ export interface Summary {
   last_update: string;
 }
 
+/** How much NetSleuth may do on a network. New networks start idle. */
+export const TRUST_LEVELS = ["home", "observe", "idle"] as const;
+export type Trust = (typeof TRUST_LEVELS)[number];
+
 export interface Health {
   status: "ok";
   version: string;
   capturing: boolean;
   interface: string | null;
+  /** When this backend process started; changes on every restart. */
+  started_at: string | null;
+  /** The network this PC is on; null in replay mode. */
+  network: { id: string; label: string | null; ssid: string | null; trust: Trust } | null;
+}
+
+/** A network profile: each network keeps its own device list. Identified by its router, not its name. */
+export interface Network {
+  id: string;
+  label: string | null;
+  ssid: string | null;
+  subnet: string;
+  gateway_ip: string | null;
+  gateway_mac: string | null;
+  trust: Trust;
+  first_seen: string;
+  last_seen: string;
+  /** A known network with the same Wi-Fi name and subnet but a different router. */
+  similar_to: string | null;
+  current: boolean;
+}
+
+export interface NetworkPatch {
+  label?: string | null;
+  trust?: Trust;
+}
+
+/** The device list recorded before network profiles, offered to the current network. */
+export interface LegacyList {
+  available: boolean;
+  devices: number;
+  last_seen: string | null;
+  /** Its first router is this network's router. A hint only: the user decides. */
+  likely_here: boolean;
+  /** False once this network has records of its own. */
+  adoptable: boolean;
 }
 
 export interface Settings {

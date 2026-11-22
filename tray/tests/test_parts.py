@@ -61,3 +61,34 @@ def test_exit_messages_cover_documented_codes():
     assert "Npcap" in exit_message(3, 5000)
     assert "5000" in exit_message(4, 5000)
     assert exit_message(1, 5000) is None
+
+
+def test_quit_returns_at_once_and_stops_the_icon_after_the_backend():
+    import threading
+    import time
+
+    from tray.app import TrayApp
+
+    order = []
+
+    class SlowSupervisor:
+        def stop(self):
+            time.sleep(0.3)               # e.g. the backend had to be killed
+            order.append("backend")
+
+    class FakeIcon:
+        def stop(self):
+            order.append("icon")
+
+    app = TrayApp.__new__(TrayApp)        # no real supervisor, icon or backend client
+    app._stop = threading.Event()
+    app.supervisor = SlowSupervisor()
+    app._icon = FakeIcon()
+    app.status = ""
+
+    started = time.monotonic()
+    thread = app._quit()
+    assert time.monotonic() - started < 0.1        # the menu thread isn't blocked
+    assert app._quit() is None                     # a second click does nothing
+    thread.join(timeout=5)
+    assert order == ["backend", "icon"]

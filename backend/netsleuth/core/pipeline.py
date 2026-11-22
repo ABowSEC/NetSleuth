@@ -46,6 +46,7 @@ class Pipeline:
         observer: PipelineObserver | None = None,
         offline_timeout_s: Callable[[], int] = lambda: 600,
         retention_days: Callable[[], int] = lambda: 30,
+        accept: Callable[[], bool] = lambda: True,
     ):
         self.store = store
         self.network = network
@@ -53,6 +54,7 @@ class Pipeline:
         self.observer = observer or PipelineObserver()
         self._offline_timeout_s = offline_timeout_s
         self._retention_days = retention_days
+        self._accept = accept       # False while this network is idle or the link is down
 
         self._queue: queue.Queue = queue.Queue(maxsize=QUEUE_SIZE)
         self._stop = threading.Event()
@@ -89,7 +91,7 @@ class Pipeline:
 
     def submit(self, pkt) -> None:
         """Scapy ``prn`` callback. Must never raise or block."""
-        if self._paused.is_set():
+        if self._paused.is_set() or not self._accept():
             return
         try:
             self._queue.put_nowait(pkt)

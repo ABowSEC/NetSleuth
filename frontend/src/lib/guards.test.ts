@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { toDevice, toDeviceDetail, toDevices, toEvent, toIdentify, toSettings } from "./guards";
+import {
+  toDevice, toDeviceDetail, toDevices, toEvent, toHealth, toIdentify, toLegacy, toNetwork, toNetworks, toSettings,
+} from "./guards";
 
 describe("toDevice", () => {
   it("keeps well-formed fields", () => {
@@ -66,4 +68,24 @@ it("identify status defaults to idle", () => {
     running: false, started_at: null, ends_at: null, done: 0, total: 0, current: null, port_check: false,
   });
   expect(toIdentify({ running: true, done: 3, total: 9 })).toMatchObject({ running: true, done: 3, total: 9 });
+});
+
+it("health network degrades safely and never assumes more trust than given", () => {
+  expect(toHealth({ capturing: true }).network).toBeNull();
+  expect(toHealth({ started_at: "2026-11-21T18:00:00Z" }).started_at).toBe("2026-11-21T18:00:00Z");
+  expect(toHealth({}).started_at).toBeNull();
+  expect(toHealth({ network: { id: "a1", ssid: "X", trust: "trusted" } }).network)
+    .toEqual({ id: "a1", label: null, ssid: "X", trust: "idle" });
+  expect(toHealth({ network: { trust: "home" } }).network).toBeNull();
+});
+
+it("networks are shaped defensively", () => {
+  const [n] = toNetworks([{ id: "a1", subnet: "10.0.0.0/24", trust: "observe", current: true, similar_to: 3 }, { subnet: "x" }]);
+  expect(n).toMatchObject({ id: "a1", trust: "observe", current: true, similar_to: null, label: null });
+  expect(toNetworks([{ subnet: "x" }])).toEqual([]);
+  expect(toNetwork(null).trust).toBe("idle");
+});
+
+it("legacy list defaults to nothing available", () => {
+  expect(toLegacy(null)).toEqual({ available: false, devices: 0, last_seen: null, likely_here: false, adoptable: false });
 });

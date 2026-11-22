@@ -49,18 +49,20 @@ class Discovery:
         own_ip: str,
         interval_s: Callable[[], int],
         sweeper: Callable[[str, IPv4Network], Iterable[tuple[str, str]]] = arp_sweep,
+        enabled: Callable[[], bool] = lambda: True,
     ):
         self._pipeline = pipeline
         self._iface = iface
         self._target = sweep_target(pipeline.network, own_ip)
         self._interval_s = interval_s
         self._sweeper = sweeper
+        self._enabled = enabled     # sweeps run only on Home networks
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
     def sweep_once(self) -> int:
-        """Run one sweep (unless paused). Returns the number of replies."""
-        if self._pipeline.paused:
+        """Run one sweep (unless paused or not allowed here). Returns the number of replies."""
+        if self._pipeline.paused or not self._enabled():
             return 0
         facts = []
         for raw_mac, ip in self._sweeper(self._iface, self._target):

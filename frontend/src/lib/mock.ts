@@ -5,7 +5,7 @@
 import type { Api } from "./api";
 import { ApiError } from "./errors";
 import type {
-  Device, DeviceDetail, EvidenceItem, IdentifyStatus, NetEvent, Settings, Summary,
+  Device, DeviceDetail, EvidenceItem, Health, IdentifyStatus, NetEvent, Network, Settings, Summary,
 } from "./types";
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -74,9 +74,37 @@ const LEARNED: Record<string, Pick<Device, "model" | "os" | "suggested_name" | "
   },
 };
 
+/** NEXT_PUBLIC_MOCK_SCENARIO=new-network starts on a network NetSleuth hasn't met, with the old list waiting. */
+const NEW_NETWORK = process.env.NEXT_PUBLIC_MOCK_SCENARIO === "new-network";
+
+function seedNetworks(): Network[] {
+  const n = (id: string, partial: Partial<Network>, lastSeenMin: number): Network => ({
+    id, label: null, ssid: null, subnet: "192.168.1.0/24", gateway_ip: "192.168.1.1", gateway_mac: "02:00:00:00:00:01",
+    trust: "idle", first_seen: minutesAgo(60 * 24 * 20), last_seen: minutesAgo(lastSeenMin), similar_to: null,
+    current: false, ...partial,
+  });
+  const networks = [
+    n("a1b2c3d4e5f6", { label: "Home", ssid: "ExampleHome", trust: "home", current: !NEW_NETWORK }, NEW_NETWORK ? 90 : 0),
+    n("0f1e2d3c4b5a", { ssid: "Campus-WiFi", subnet: "172.16.0.0/16", gateway_ip: "172.16.0.1",
+      gateway_mac: "02:00:00:00:aa:01" }, 60 * 24 * 2),
+    n("9a8b7c6d5e4f", { label: "Library", ssid: "Library Guest", subnet: "10.20.0.0/22", gateway_ip: "10.20.0.1",
+      gateway_mac: "02:00:00:00:bb:01", trust: "observe" }, 60 * 24 * 6),
+  ];
+  if (NEW_NETWORK) {
+    networks.unshift(n("5d4c3b2a1f0e", {
+      ssid: "Friends-WiFi", subnet: "192.168.1.0/24", gateway_mac: "02:00:00:00:cc:01", current: true,
+      first_seen: minutesAgo(0),
+    }, 0));
+  }
+  return networks;
+}
+
 const state = {
-  devices: seedDevices(),
-  events: seedEvents(),
+  devices: NEW_NETWORK ? [] as Device[] : seedDevices(),
+  events: NEW_NETWORK ? [] as NetEvent[] : seedEvents(),
+  networks: seedNetworks(),
+  legacyWaiting: NEW_NETWORK,
+  startedAt: minutesAgo(30),
   capturing: true,
   settings: {
     offline_timeout_s: 600, sweep_interval_s: 300, retention_days: 30, lan_exposure: false, anomaly_plugin: false,
@@ -135,8 +163,25 @@ function presence(device: Device): DeviceDetail["presence"] {
   return sessions;
 }
 
+const current = (): Network => state.networks.find((n) => n.current)!;
+
+function findNetwork(id: string | null): Network {
+  const network = id === null ? current() : state.networks.find((n) => n.id === id);
+  if (!network) throw new ApiError(404, "not_found", "No such network.");
+  return network;
+}
+
+function health(): Health {
+  const n = current();
+  return {
+    status: "ok", version: "mock", capturing: state.capturing && n.trust !== "idle", interface: "Wi-Fi",
+    started_at: state.startedAt,
+    network: { id: n.id, label: n.label, ssid: n.ssid, trust: n.trust },
+  };
+}
+
 export const mockApi: Api = {
-  health: () => delay({ status: "ok", version: "mock", capturing: state.capturing, interface: "Wi-Fi" }),
+  health: () => delay(health()),
   summary: () => delay(summary()),
   devices: (query = {}) => delay(state.devices.filter((d) =>
     (query.status === "online" ? d.online : query.status === "offline" ? !d.online : true)
@@ -195,6 +240,9 @@ export const mockApi: Api = {
   identify: () => delay(state.identify),
   startIdentify: async (options = {}) => {
     if (state.identify.running) throw new ApiError(409, "already_running", "Identify mode is already running.");
+    if (current().trust !== "home") {
+      throw new ApiError(423, "network_not_home", "Identify only runs on networks you've marked as Home.");
+    }
     if (!state.capturing) throw new ApiError(423, "monitoring_paused", "Resume monitoring before identifying devices.");
     const minutes = options.minutes ?? state.settings.identify_minutes;
     const targets = state.devices.filter((d) => d.online && (!options.macs || options.macs.includes(d.mac)));
@@ -215,6 +263,45 @@ export const mockApi: Api = {
       finishIdentify(targets, "it was stopped");
     }
     return delay(state.identify);
+  },
+  network: async () => delay(current()),
+  networks: async () => delay(state.networks),
+  updateNetwork: async (id, patch) => {
+    const network = findNetwork(id);
+    if (patch.label !== undefined) network.label = patch.label?.trim() || null;
+    if (patch.trust !== undefined) network.trust = patch.trust;
+    return delay(network);
+  },
+  forgetNetwork: async (id) => {
+    const network = findNetwork(id);
+    if (network.current) throw new ApiError(409, "current_network", "You can't forget the network you're on.");
+    state.networks = state.networks.filter((n) => n.id !== id);
+    await delay(null);
+  },
+  legacy: async () => delay({
+    available: state.legacyWaiting,
+    devices: state.legacyWaiting ? seedDevices().length : 0,
+    last_seen: state.legacyWaiting ? minutesAgo(90) : null,
+    likely_here: false,
+    adoptable: state.legacyWaiting && state.devices.length === 0,
+  }),
+  adoptLegacy: async (trust) => {
+    if (!state.legacyWaiting) throw new ApiError(409, "nothing_to_adopt", "There's no earlier device list waiting to be used.");
+    state.legacyWaiting = false;
+    state.devices = seedDevices();
+    state.events = seedEvents();
+    current().trust = trust;
+    state.startedAt = new Date().toISOString();
+    await delay(null);
+  },
+  resetEverything: async () => {
+    const here = current();
+    state.networks = [{ ...here, label: null, trust: "idle", similar_to: null, first_seen: minutesAgo(0) }];
+    state.devices = [];
+    state.events = [];
+    state.legacyWaiting = false;
+    state.startedAt = new Date().toISOString();
+    await delay(null);
   },
   exportUrl: "data:application/json,[]",
   streamUrl: null,

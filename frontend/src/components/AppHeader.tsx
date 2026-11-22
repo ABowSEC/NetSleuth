@@ -4,18 +4,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLive, type LiveStatus } from "@/context/LiveContext";
 import { useTheme, type ThemeMode } from "@/context/ThemeContext";
+import { networkName } from "@/lib/networks";
+import type { Health } from "@/lib/types";
 
 const NAV = [
   { href: "/", label: "Devices" },
   { href: "/activity", label: "Activity" },
+  { href: "/networks", label: "Networks" },
   { href: "/settings", label: "Settings" },
 ];
 
-function statusBadge(status: LiveStatus, capturing: boolean | null, iface: string | null) {
+export function statusBadge(status: LiveStatus, health: Health | null) {
   if (status === "offline") return { label: "Can't reach NetSleuth", dot: "bg-danger" };
   if (status === "connecting") return { label: "Connecting", dot: "bg-warn animate-pulse" };
-  if (capturing === false) return { label: "Paused", dot: "bg-warn" };
-  return { label: iface ? `Watching ${iface}` : "Watching", dot: "bg-ok" };
+  const network = health?.network;
+  const where = network ? networkName(network, health?.interface ?? "this network") : health?.interface ?? null;
+  // An idle network isn't paused: NetSleuth was told not to record there.
+  if (network?.trust === "idle") return { label: `Idle on ${where}`, dot: "bg-muted/40" };
+  if (health?.capturing === false) return { label: "Paused", dot: "bg-warn" };
+  if (network?.trust === "observe") return { label: `Listening on ${where}`, dot: "bg-ok" };
+  return { label: where ? `Watching ${where}` : "Watching", dot: "bg-ok" };
 }
 
 const NEXT_THEME: Record<ThemeMode, ThemeMode> = { system: "light", light: "dark", dark: "system" };
@@ -52,7 +60,7 @@ function ThemeButton() {
 export function AppHeader() {
   const pathname = usePathname();
   const { status, health } = useLive();
-  const badge = statusBadge(status, health ? health.capturing : null, health?.interface ?? null);
+  const badge = statusBadge(status, health);
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-bg/85 backdrop-blur">

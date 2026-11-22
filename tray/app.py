@@ -212,12 +212,30 @@ class TrayApp:
     def _restart(self, icon=None, item=None) -> None:
         threading.Thread(target=self.supervisor.restart, daemon=True).start()
 
-    def _quit(self, icon=None, item=None) -> None:
+    def _quit(self, icon=None, item=None) -> threading.Thread | None:
+        """Stop the backend, then the icon.
+
+        Menu callbacks run on the icon's message loop. Stopping the backend can
+        take seconds (longer if it has to be killed), and blocking that loop
+        freezes the menu, so the work happens on its own thread.
+        """
+        if self._stop.is_set():
+            return None          # already quitting
         self._stop.set()
         self.status = "Stopping…"
-        self.supervisor.stop()
-        if self._icon:
-            self._icon.stop()
+
+        def finish() -> None:
+            try:
+                self.supervisor.stop()
+            except Exception:
+                log.exception("Stopping the backend failed")
+            finally:
+                if self._icon:
+                    self._icon.stop()
+
+        thread = threading.Thread(target=finish, name="tray-quit")   # non-daemon: finishes before exit
+        thread.start()
+        return thread
 
     # ── Run ──────────────────────────────────────────────────────────────────
 
