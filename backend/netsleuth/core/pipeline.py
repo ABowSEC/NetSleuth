@@ -107,9 +107,13 @@ class Pipeline:
             except queue.Empty:
                 continue
             try:
-                self.apply(parse(pkt, self.network))
+                self.process(pkt)
             except Exception:
                 log.exception("Failed to process packet")
+
+    def process(self, pkt, now: float | None = None) -> None:
+        """Parse one packet and apply its facts on the calling thread."""
+        self.apply(parse(pkt, self.network), now)
 
     def apply(self, facts: list[Fact], now: float | None = None) -> None:
         now = time.monotonic() if now is None else now

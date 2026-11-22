@@ -40,6 +40,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--exit-on-stdin-close", action="store_true",
                         help="shut down cleanly when stdin closes (used by the tray supervisor)")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+
+    replay = parser.add_argument_group("replay (offline testing: reads a capture file, sends nothing)")
+    replay.add_argument("--replay", metavar="FILE", help="replay a .pcap file in place of live capture")
+    replay.add_argument("--replay-speed", type=float, default=0.0, metavar="N",
+                        help="0 = as fast as possible (default), 1 = original pacing, 10 = ten times faster")
+    replay.add_argument("--replay-exit", action="store_true",
+                        help="exit when the file is finished (default: keep serving the dashboard)")
+    replay.add_argument("--subnet", metavar="CIDR", help="the LAN in the capture (default: inferred)")
+    replay.add_argument("--gateway", metavar="IP", help="the router's IP in the capture (default: none)")
     return parser
 
 
@@ -124,6 +133,12 @@ def main(argv: list[str] | None = None) -> int:
     settings = Settings.load()
     host = args.host or ("0.0.0.0" if settings.lan_exposure else "127.0.0.1")
     log.info("NetSleuth %s starting", __version__)
+
+    if args.replay:
+        if port_in_use(host, args.port):
+            log.error("Port %d is already in use on %s.", args.port, host)
+            return EXIT_PORT_IN_USE
+        return run_replay(args, settings, host)
 
     # Deferred imports: scapy and friends are slow to load and not needed for --help.
     from .utils.network_utils import get_active_interfaces, interface_info
@@ -214,6 +229,95 @@ def run(args, settings: Settings, host: str, info) -> int:
         log.info("Shutting down.")
         identify.stop(wait=5)
         discovery.stop()
+        pipeline.stop()
+        server.close()
+        store.close()
+    return code
+
+
+def replay_db_path():
+    """A throwaway database for replays, so they never touch the real inventory."""
+    from .settings import data_dir
+
+    folder = data_dir() / "replay"
+    folder.mkdir(exist_ok=True)
+    return folder / "devices.db"
+
+
+def run_replay(args, settings: Settings, host: str) -> int:
+    """Run the pipeline, events and API on a capture file. Sends no packets."""
+    from ipaddress import ip_network
+    from pathlib import Path
+
+    from .core.events import EventEngine
+    from .core.pipeline import Pipeline
+    from .core.replay import ReplayClock, ReplayError, first_timestamp, infer_network, replay
+    from .core.store import DeviceStore
+    from .web.api import AppContext, Server, create_app, default_static_dir
+
+    path = Path(args.replay)
+    try:
+        network = ip_network(args.subnet, strict=False) if args.subnet else infer_network(path)
+        start = first_timestamp(path)
+    except ValueError as e:
+        log.error("Bad --subnet: %s", e)
+        return EXIT_USAGE
+    except ReplayError as e:
+        log.error("%s", e)
+        return EXIT_USAGE
+    if network is None:
+        log.error("Couldn't tell which subnet %s is from; pass --subnet.", path)
+        return EXIT_USAGE
+    if args.gateway and ip_address(args.gateway) not in network:
+        log.error("Gateway %s isn't in %s.", args.gateway, network)
+        return EXIT_USAGE
+
+    db = replay_db_path()
+    for leftover in (db, db.with_name(db.name + "-wal"), db.with_name(db.name + "-shm")):
+        leftover.unlink(missing_ok=True)
+    log.info("Replaying %s (subnet %s, gateway %s) into %s", path, network, args.gateway or "unknown", db)
+
+    clock = ReplayClock(start or 0.0)
+    store = DeviceStore(db)
+    store.start()
+    engine = EventEngine(store, args.gateway, clock=clock, first_run=True)
+    pipeline = Pipeline(
+        store, network, args.gateway, engine,
+        offline_timeout_s=lambda: settings.offline_timeout_s,
+        retention_days=lambda: settings.retention_days,
+    )
+    app = create_app(AppContext(
+        store=store, engine=engine, settings=settings, pipeline=pipeline,
+        interface=f"replay:{path.name}", dev=args.dev, static_dir=default_static_dir(), identify=None,
+    ))
+    server = Server(app, host, args.port)
+
+    _install_shutdown_signals()
+    if args.exit_on_stdin_close and sys.stdin is not None:
+        watch_stdin(sys.stdin.buffer, _thread.interrupt_main)
+    pipeline.start()
+    server.start()
+    log.info("Dashboard at http://%s:%d", "localhost" if host == "127.0.0.1" else host, args.port)
+
+    code = EXIT_OK
+    stop = threading.Event()
+    try:
+        replay(path, pipeline, clock=clock, speed=args.replay_speed, stop=stop)
+        store.flush()
+        if not args.replay_exit:
+            log.info("Replay finished; still serving the dashboard. Press Ctrl+C to stop.")
+            while True:
+                stop.wait(1)       # short waits keep Ctrl+C responsive on Windows
+    except KeyboardInterrupt:
+        stop.set()
+    except ReplayError as e:
+        log.error("%s", e)
+        code = EXIT_USAGE
+    except Exception:
+        log.exception("Replay stopped unexpectedly.")
+        code = EXIT_ERROR
+    finally:
+        log.info("Shutting down.")
         pipeline.stop()
         server.close()
         store.close()

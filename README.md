@@ -144,3 +144,28 @@ cd frontend  && npm run dev:mock       # dashboard with fake data, no backend
 ```
 
 To work on the dashboard against a real backend, run `python -m netsleuth --dev` and `npm run dev`, then open `localhost:3000`.
+
+### Replay mode (no live network)
+
+Replay mode runs the pipeline, events and dashboard on a capture file in place of live capture. It sends no packets: there is no ARP sweep and no Identify. It writes to its own throwaway database (`replay\devices.db`, which is wiped at the start of each replay), so your real inventory is never touched.
+
+Generate the built-in scenarios (invented devices on `192.168.77.0/24`):
+
+```
+python -m netsleuth.scenarios scenarios
+```
+
+That writes `baseline`, `new_device`, `gateway_spoof`, `port_scan` and `host_sweep` captures. Replay one:
+
+```
+python -m netsleuth --replay scenarios\port_scan.pcap --gateway 192.168.77.1
+```
+
+| Flag | Effect |
+|---|---|
+| `--replay-speed N` | `0` as fast as possible (the default), `1` original pacing, `10` ten times faster. Gaps longer than 5 s are cut short. |
+| `--replay-exit` | Exit when the file ends. Without it, the dashboard keeps running until Ctrl+C. |
+| `--subnet CIDR` | The capture's LAN. By default it's inferred from the most common private address. |
+| `--gateway IP` | The router's IP. Needed for router-takeover alerts. |
+
+Alert windows and the first-run summary follow the capture's own timestamps, so a fast replay raises the same alerts as the original traffic. Stored first-seen and last-seen times are still wall-clock times.

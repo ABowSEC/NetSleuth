@@ -291,7 +291,7 @@ def create_app(ctx: AppContext) -> Flask:
 
     def session() -> IdentifySession:
         if not ctx.identify:
-            raise ApiError(503, "identify_unavailable", "Identify mode isn't available while capture is off.")
+            raise ApiError(503, "identify_unavailable", "Identify mode isn't available during a replay.")
         return ctx.identify
 
     @api.get("/identify")

@@ -155,7 +155,10 @@ interface IdentifyStatus {
 ```
 python -m netsleuth [--interface NAME] [--host 127.0.0.1] [--port 5000]
                     [--headless] [--dev] [--log-file PATH] [--exit-on-stdin-close]
+                    [--replay FILE [--replay-speed N] [--replay-exit] [--subnet CIDR] [--gateway IP]]
 ```
+
+- `--replay FILE`: offline testing. Reads a .pcap instead of capturing, sends nothing, and writes to `<data dir>/replay/devices.db` (wiped at start). There's no Identify mode: `/identify/start` returns `503`. `Health.interface` is `"replay:<file name>"`. A missing or unreadable file, an undetectable subnet, or a gateway outside the subnet exits with `2`.
 
 - `--headless`: no interactive prompts; fails with exit code `2` if `--interface` is missing and more than one candidate exists.
 - `--dev`: allows `http://localhost:3000` origin for writes.
